@@ -6,142 +6,116 @@ Organizations and individuals generate large amounts of video content
 (meetings, lectures, interviews, training sessions, webinars, tutorials) that
 is hard to manage, search, and consume. Users have to watch an entire video
 to find specific information, and manually create transcripts and summaries.
-Processing video on a traditional application server also consumes heavy
-compute and doesn't scale well when many users upload at once.
+Processing video on the same server that answers web requests also
+starves the app of CPU when many users upload at once, so the heavy work has
+to run on its own fleet that scales with the backlog.
 
 ## Proposed solution
 
-A cloud-based platform on AWS where users upload videos through a web app
-straight to S3, and processing runs asynchronously in an event-driven
-pipeline that is defined entirely as AWS configuration, not application code:
+A **serverful** platform on AWS: every piece of compute is an EC2 instance we
+size, patch and scale ourselves, managed with the AWS Console and Terraform.
+Users upload straight to S3, and a fleet of worker servers does the heavy
+video work instead of managed media services.
 
-- **Amazon S3** — original videos, processed videos, transcripts, artifacts
-- **S3 event notifications + Amazon SQS** — every upload becomes a durable,
-  buffered processing job
-- **Amazon EventBridge Pipes + AWS Step Functions** — pull jobs off the queue
-  and orchestrate each processing step with retries, using Step Functions'
-  native service integrations
-- **AWS Elemental MediaConvert** — transcodes videos into optimized
-  resolutions/formats
-- **Amazon Transcribe** — converts speech to searchable text
-- **Amazon Bedrock** — analyzes transcripts into summaries, key topics,
-  chapters, and action items
-- **Amazon RDS (Postgres)** — application and video metadata
-- **Amazon CloudFront** — content delivery
+- **EC2 Auto Scaling group + ECS (EC2 launch type)** runs three containers:
+  the Go API, an Nginx server for the React build, and the video worker
+- **Application Load Balancer** is the single public entry point, routing
+  `/api/*` to the API and everything else to Nginx
+- **Amazon S3** holds original videos, processed videos and transcripts
+- **S3 event notifications + Amazon SQS** turn each upload into a job
+- **Worker containers** poll SQS and do the processing on the instance:
+  **ffmpeg** transcodes, **whisper.cpp** transcribes on CPU,
+  **Amazon Bedrock** writes the summary, chapters and action items
+- **Amazon RDS (Postgres)** stores users, videos, job status and results
+- **ECS service auto scaling** adds worker tasks as the SQS backlog grows,
+  and the **ECS capacity provider** adds EC2 instances to fit them
 
-The web app runs as Docker containers on Amazon ECS using the **EC2 launch
-type**: an Auto Scaling group of EC2 instances forms the ECS cluster, and ECS
-schedules the application's containers (pulled from Amazon ECR) onto those
-instances. This sits behind an Application Load Balancer, across multiple
-Availability Zones, inside a VPC with private subnets, security groups, and
-IAM least-privilege access. CloudWatch handles monitoring, logging, and
-alarms.
+Everything runs in a VPC across two Availability Zones, with instances in
+private subnets, no SSH (Systems Manager Session Manager instead),
+least-privilege IAM roles, Secrets Manager for credentials and CloudWatch
+for logs, metrics and alarms.
+
+### Serverless vs serverful
+
+The same jobs done the opposite way from my serverless project, ClimaRoute:
+
+| Job | ClimaRoute (serverless) | This project (serverful) |
+|---|---|---|
+| API compute | Lambda (container images) | Go API container on EC2 (ECS, EC2 launch type) |
+| Public entry, throttling | API Gateway HTTP API | Application Load Balancer + AWS WAF rate rule |
+| Heavy parallel work | Step Functions Distributed Map | Worker containers on EC2 pulling from SQS |
+| Long-running jobs | ECS Fargate | ECS on an EC2 Auto Scaling group |
+| Database | DynamoDB (TTL expiry) | RDS Postgres |
+| Scheduled work, keep-warm | EventBridge | Not needed: servers are always warm |
+| Frontend hosting | Amplify Hosting | Nginx container behind the ALB |
+| Scaling | Per request, automatic | Target tracking on CPU and SQS backlog, capacity provider adds instances |
+| Shared | S3, ECR, CloudWatch, Budgets | S3, ECR, CloudWatch (+ agent), Budgets |
+
+The one managed service kept is Bedrock: running an LLM yourself needs a
+GPU instance (g5 class), which costs far more than a demo is worth.
 
 ## Architecture
 
-```
-                           USERS
-                             |
-                             v
-                       +-----------+
-                       | Route 53  |
-                       +-----+-----+
-                             |
-                             v
-                       +-----------+
-                       |CloudFront |
-                       +-----+-----+
-                             |
-                             v
-                  +---------------------+
-                  | Application Load    |
-                  |     Balancer        |
-                  +----------+----------+
-                             |
-                 +-----------+-----------+
-                 |                       |
-                 v                       v
-          +-------------+         +-------------+
-          |   EC2 #1    |         |   EC2 #2    |
-          | ECS cluster |         | ECS cluster |
-          | instance    |         | instance    |
-          | -> runs ECS |         | -> runs ECS |
-          |    Task     |         |    Task     |
-          +------+------+         +------+------+
-                 |                       |
-                 +-----------+-----------+
-                             |
-                     Application API
-                             |
-                 +-----------+-----------+
-                 |                       |
-                 v                       v
-            +---------+    presigned  +---------+
-            |   RDS   |    URLs       |   S3    | <--- browser uploads
-            |Postgres |               | Videos  |      directly
-            +---------+               +----+----+
-                                           |
-                                           | S3 event notification
-                                           v
-                                      +---------+
-                                      |  SQS    |
-                                      |  Queue  |
-                                      +----+----+
-                                           |
-                                           | EventBridge Pipe
-                                           v
-                                   +----------------+
-                                   | Step Functions |
-                                   | state machine  |
-                                   +-------+--------+
-                                           |
-                     +---------------------+---------------+
-                     |                     |               |
-                     v                     v               v
-              +-------------+      +-------------+   +----------+
-              | MediaConvert|      | Transcribe  |   | Bedrock  |
-              |             |      |             |   |          |
-              | Video       |      | Speech ->   |   | AI       |
-              | Processing  |      | Text        |   | Analysis |
-              +------+------+      +------+------+   +----+-----+
-                     |                    |               |
-                     +--------------------+---------------+
-                                          |
-                                          v
-                                     +---------+
-                                     |   S3    |
-                                     |Processed|
-                                     | Content |
-                                     +----+----+
-                                          |
-                                          v
-                                     CloudFront
-                                          |
-                                          v
-                                     USER DASHBOARD
-```
-
-Each EC2 instance runs the ECS agent and joins the ECS cluster; ECS then
-places the application's container (image pulled from Amazon ECR) onto
-whichever instance has capacity. Not shown above to keep the diagram focused
-on the request/processing path, but Docker + ECR sit "underneath" the EC2
-boxes:
+Request path:
 
 ```
-   AWS
-    |
-    +------------------+------------------+
-    |                                     |
-Infrastructure                       Containers
-    |                                     |
-   VPC                                  Docker
-    |                                     |
-   ALB                                   ECR
-    |                                     |
-   EC2  <----------------------------------
-    |
-   RDS
+                    USERS (browser)
+                          |
+                          v
+                     +----------+
+                     | Route 53 |
+                     +----+-----+
+                          |
+                          v
+               +---------------------+
+               |  Application Load   |
+               |  Balancer  (+ WAF)  |
+               +-----+---------+-----+
+              /api/* |         | /*
+                     v         v
+               +----------+ +----------+
+               | API (Go) | |  Nginx   |
+               |          | | (React)  |
+               +--+----+--+ +----------+
+                  |    |
+                  |    +-------------------+
+     users,       |      presigned upload  |
+     videos,      |      and play URLs     |
+     job status   v                        v
+             +----------+          +---------------+
+             |   RDS    |          |      S3       | <--- browser uploads
+             | Postgres |          |  originals/   |      and plays videos
+             +----------+          |  processed/   |      with those URLs
+                                   +---------------+
 ```
+
+Processing path:
+
+```
+   +---------------+   event notification   +-------+
+   | S3 originals/ | ---------------------> |  SQS  | ---> dead-letter queue
+   +---------------+   one message per      +---+---+      after 3 tries
+                       upload                   |
+                                                | long poll
+                                                v
+                                      +-------------------+
+                                      |    Worker (Go)    |
+                                      +---------+---------+
+                                                |
+             +-----------------+----------------+----------------+-----------------+
+             |                 |                                 |                 |
+             v                 v                                 v                 v
+     +---------------+ +---------------+                 +---------------+ +---------------+
+     |    ffmpeg     | |  whisper.cpp  |                 |    Bedrock    | | S3 processed/ |
+     |  transcode +  | | speech->text  |                 | summary,      | | RDS: status   |
+     | extract audio | |   on CPU      |                 | chapters,     | |   = ready     |
+     |               | |               |                 | action items  | |               |
+     +---------------+ +---------------+                 +---------------+ +---------------+
+     \_________ on the EC2 instance _________/                (AWS API calls)
+```
+
+API, Nginx and Worker are all containers on one ECS cluster, running on an
+EC2 Auto Scaling group in private subnets across AZ A and AZ B.
 
 ### Network architecture
 
@@ -150,92 +124,97 @@ Infrastructure                       Containers
                           |
           +---------------+----------------+
           |                                |
-          v                                v
    Availability Zone A              Availability Zone B
           |                                |
-   +------+-------+                 +------+-------+
-   |              |                  |              |
-Public Subnet  Private Subnet    Public Subnet  Private Subnet
-   |              |                  |              |
-   v              v                  v              v
-  ALB          EC2 #1               ALB          EC2 #2
-          (ECS cluster                       (ECS cluster
-           instance)                          instance)
-
-                    Private Database Subnets
-                            |
-                            v
-                         RDS
+   Public Subnet: ALB, NAT          Public Subnet: ALB
+   Private Subnet: EC2 (ECS)        Private Subnet: EC2 (ECS)
+   DB Subnet: RDS primary           DB Subnet: RDS standby (optional)
 ```
 
-Traffic path: `Internet -> ALB -> EC2 (ECS task) -> RDS`. The EC2 instances
-that make up the ECS cluster sit in private subnets with no public IPs; RDS
-is never exposed to the internet directly either. Outbound access from the
-instances (e.g. to pull images from ECR, call other AWS services) goes
-through a NAT Gateway in the public subnet.
+Traffic path: `Internet -> ALB -> EC2 (ECS task) -> RDS`. Instances have no
+public IPs and no SSH port; you get a shell through Session Manager. Outbound
+traffic (ECR pulls, SQS, Bedrock) goes through one NAT Gateway; an S3 gateway
+endpoint keeps the large video transfers off the NAT, which bills per GB.
 
 ### Video processing workflow
 
 ```
 1. User requests an upload; API returns a presigned S3 URL
-          |
 2. Browser uploads the video directly to S3
-          |
 3. S3 event notification puts a message on SQS
-          |
-4. EventBridge Pipe starts a Step Functions execution
-          |
-5. MediaConvert transcodes the video
-          |
-6. Transcribe generates the transcript
-          |
-7. Bedrock analyzes the transcript
-          |
-8. Results are written to S3
-          |
-9. User sees results in the dashboard (served via presigned URLs)
+4. A worker container receives the message (the message stays hidden
+   while it works)
+5. Worker downloads the video to the instance's EBS volume
+6. ffmpeg transcodes it and extracts the audio
+7. whisper.cpp turns the audio into a transcript
+8. Worker sends the transcript to Bedrock for summary, chapters, actions
+9. Worker uploads the results to S3, updates the video row in RDS,
+   and deletes the SQS message
+10. Failed jobs retry; after 3 tries SQS moves them to a dead-letter queue
+11. Dashboard shows the status from RDS and plays files via presigned URLs
 ```
 
-The application's only AWS SDK usage is generating presigned S3 URLs. The
-whole processing pipeline is AWS configuration, managed with Terraform.
+### Scaling
+
+- **Worker tasks**: ECS service auto scaling on the SQS metric
+  `ApproximateNumberOfMessagesVisible` (step scaling: 0 messages -> 1 task,
+  each 2 waiting messages -> one more task, up to a cap).
+- **EC2 instances**: an ECS capacity provider with managed scaling grows
+  and shrinks the Auto Scaling group so the tasks have room.
+- **API tasks**: target tracking on average CPU at 60%.
 
 ### AWS services in scope
 
 | Category | Services |
 |---|---|
-| Core infrastructure | VPC, Subnets, Route Tables, Internet Gateway, NAT Gateway, Security Groups, EC2, ECS (EC2 launch type), ECR, Application Load Balancer, Auto Scaling |
+| Compute | EC2, Launch Templates, Auto Scaling groups, ECS (EC2 launch type) with capacity providers, ECR, EBS gp3 |
+| Networking | VPC, Subnets, Route Tables, Internet Gateway, NAT Gateway, S3 gateway endpoint, Security Groups, Application Load Balancer, Route 53 |
 | Storage & database | S3, RDS PostgreSQL |
-| Event-driven orchestration | S3 Event Notifications, SQS, EventBridge Pipes, Step Functions |
-| Video & AI | MediaConvert, Amazon Transcribe, Amazon Bedrock |
-| Delivery & networking | CloudFront, Route 53 |
-| Security | IAM, Secrets Manager, AWS WAF (optional) |
-| Monitoring | CloudWatch |
+| Queueing | S3 Event Notifications, SQS with a dead-letter queue |
+| AI | Amazon Bedrock |
+| Security | IAM roles (instance role, task roles), Secrets Manager, Systems Manager Session Manager, AWS WAF |
+| Monitoring & cost | CloudWatch Logs, metrics, alarms, CloudWatch agent, AWS Budgets |
 
 ## Infrastructure as code
 
-AWS resources are managed with **Terraform** so the whole stack can be
-deployed and torn down on demand (`terraform apply` / `terraform destroy`),
-which keeps hourly-billed resources like the NAT Gateway, ALB, EC2 and RDS
-from running when they aren't needed.
+Everything is learned in the **AWS Console** first, then written in
+**Terraform**, so the whole stack comes up and goes away with
+`terraform apply` / `terraform destroy`. That matters more here than in a
+serverless stack: EC2, the NAT Gateway, the ALB and RDS bill by the hour
+whether anyone uses them or not.
 
 | Terraform | Console (one-time) | Script |
 |---|---|---|
-| S3 buckets (CORS, lifecycle, encryption, event notifications), SQS, EventBridge Pipes, Step Functions, IAM roles and policies, ECR, VPC, ECS, ALB, RDS, CloudWatch log groups and alarms | Terraform state bucket, AWS Budget alert, Bedrock model access | `docker build` + push to ECR |
+| VPC, subnets, NAT, S3 endpoint, security groups, ALB, launch template, Auto Scaling group, ECS cluster, capacity provider, task definitions, services, scaling policies, ECR, RDS, S3 buckets (CORS, lifecycle, encryption, event notifications), SQS + DLQ, IAM roles, Secrets Manager secret, CloudWatch log groups and alarms, WAF | Terraform state bucket, AWS Budget alert, Bedrock model access | `docker build` + push to ECR |
+
+### Terraform creates, the SDK runs, the CLI is for one-offs
+
+| What | Tool | Where in this project |
+|---|---|---|
+| Creating infrastructure | Terraform (each service learned in the Console first) | `infra/` |
+| Running code talking to AWS | AWS SDK for Go v2 | API: presigned S3 URLs. Worker: `sqs.ReceiveMessage`, `s3.GetObject` / `PutObject`, `bedrockruntime.Converse`, `sqs.DeleteMessage` |
+| Manual checks and one-off tasks | AWS CLI | Pushing images, checking a queue, testing an upload |
+
+No SDK, CDK or SAM is used to create infrastructure, and no Terraform is used
+for work that happens at runtime.
 
 ## Status
 
 - [x] Go API with JWT auth, Postgres, React frontend
 - [x] Direct-to-S3 uploads and playback via presigned URLs
-- [ ] Terraform for the existing S3 bucket
-- [ ] S3 event notifications → SQS
-- [ ] EventBridge Pipe → Step Functions → MediaConvert, Transcribe, Bedrock
-- [ ] Results in the dashboard
-- [ ] ECS, ALB, RDS, CloudFront, Route 53 deployment
+- [ ] Terraform: S3 bucket, SQS + DLQ, S3 event notification
+- [ ] Worker: SQS poll, ffmpeg, whisper.cpp, Bedrock, results to S3 + RDS
+- [ ] Dockerfiles for API, Nginx and worker; push to ECR
+- [ ] Terraform: VPC, ALB, EC2 Auto Scaling group, ECS, RDS
+- [ ] Scaling policies, CloudWatch alarms, WAF, Route 53
 
 ## How this is being built
 
 - **Frontend**: React + TypeScript + Vite + Tailwind
-- **Backend**: Go (Gin), Postgres
+- **Backend**: Go (Gin) API and a Go worker, Postgres, AWS SDK for Go v2
+  for runtime calls only
+- **Worker tools**: ffmpeg (transcoding), whisper.cpp (transcription), run
+  from Go with `exec.Command`
 - **Infrastructure**: AWS Console to learn each service, then Terraform
 
 ## Project layout
@@ -249,6 +228,7 @@ backend/
   internal/store/     SQL queries
   internal/auth/      JWT + password hashing
   internal/storage/   S3 presigned URLs, or local filesystem for offline dev
+  cmd/worker/         SQS worker: ffmpeg, whisper.cpp, Bedrock (planned)
   internal/handlers/  HTTP handlers
   internal/router/    route wiring
 frontend/
