@@ -23,6 +23,12 @@ ClimaRoute. Two rules shape every choice below:
   only AWS endpoint our code talks to is a public HTTPS key download (see
   [Identity and playback](#identity-and-playback)).
 
+A third constraint: the AWS account is on the **AWS Free plan**, which blocks
+MediaConvert and Transcribe (`SubscriptionRequiredException`). Transcoding
+and transcription therefore run in our own worker with ffmpeg and
+whisper.cpp; Rekognition, Step Functions, SNS and EventBridge work on the
+plan.
+
 Some code exists only because of the no-SDK rule: HMAC-signed file URLs,
 CloudFront cookie signing with Go's standard crypto, and the Mountpoint
 folder. That is deliberate, not accidental complexity.
@@ -32,17 +38,20 @@ folder. That is deliberate, not accidental complexity.
 > **Not built yet.** This section describes where the project is going. The
 > [Status](#status) list shows what exists today.
 
-- **ECS on an EC2 Auto Scaling group** runs the Go API, an Nginx server for
-  the React build, and a small Go worker task used by the pipeline.
+- **ECS on EC2** runs the Go API and an Nginx server for the React build on
+  one Auto Scaling group, and the Go worker (ffmpeg + whisper.cpp) on a
+  second Auto Scaling group that scales to zero, so processing never takes
+  CPU from the API.
 - **CloudFront + WAF + Application Load Balancer** is the public entry point.
   The ALB signs users in with **Amazon Cognito**; the API checks the identity
   header the ALB adds.
 - **Mountpoint for Amazon S3** mounts the video bucket on each EC2 host, so
   the API saves uploads as plain files and they land in S3.
 - **EventBridge + Step Functions** turn each finished upload into a pipeline:
-  **MediaConvert**, **Transcribe**, **Rekognition Video**, **Bedrock**, the Go
-  worker task, then the result into **Aurora PostgreSQL** through the
-  **RDS Data API**, and an **SNS** email.
+  the Go worker (transcode to HLS, thumbnails, an H.264 MP4, transcript),
+  **Rekognition Video** (labels), **Bedrock** (summary, chapters, tags), then
+  the result into **Aurora PostgreSQL** through the **RDS Data API**, and an
+  **SNS** email.
 - **Aurora PostgreSQL** (provisioned instance) stores users, videos, status
   and results; the API reads it with a normal Postgres driver. Aurora is
   required, not plain RDS, because Step Functions writes to it through the
@@ -63,7 +72,7 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
 | API compute | Lambda (container images) | Go API container on EC2 (ECS, EC2 launch type) |
 | Public entry, throttling | API Gateway HTTP API | CloudFront + ALB + AWS WAF rate rule |
 | Auth | Cognito in the app | Cognito on the ALB listener |
-| Heavy work | Step Functions Distributed Map on Lambda | Step Functions driving MediaConvert, Transcribe, Rekognition and a worker task on EC2 |
+| Heavy work | Step Functions Distributed Map on Lambda | Step Functions driving a Go worker (ffmpeg, whisper.cpp) on EC2, Rekognition and Bedrock |
 | Long-running jobs | ECS Fargate | ECS on an EC2 Auto Scaling group |
 | Database | DynamoDB (TTL expiry) | Aurora PostgreSQL (provisioned) |
 | Frontend hosting | Amplify Hosting | Nginx container behind the ALB, cached by CloudFront |
@@ -120,19 +129,16 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
                                               |
         0. set_video_status(key, [uploaded] -> processing); stop if false
                                               |
-        1. MediaConvert (.sync) -> HLS ladder capped at source resolution,
-           thumbnails, watermark, audio rendition, H.264 MP4
+        1. ECS RunTask (.sync), worker capacity provider: Go worker
+           - ffmpeg -> HLS ladder capped at source resolution, thumbnails,
+             H.264 MP4 (works on local scratch disk, then copies to the mount)
+           - whisper.cpp on the audio -> transcript JSON + VTT subtitles
+           - writes the Bedrock request body
                                               |
-              +----------------------------------+----------------------------------+
-              | 2a. Transcribe on the audio      | 2b. Rekognition Video on the MP4 |
-              |     Start, then Wait/Get loop    |     Start, then Wait/Get loop    |
-              |     -> transcript JSON in S3     |     -> labels, moderation in S3  |
-              +----------------------------------+----------------------------------+
+        2. Rekognition Video on the MP4: Start, then Wait/Get loop
+           -> labels.json in S3
                                               |
-        3. ECS RunTask (.sync): Go worker reads the transcript and writes the
-           Bedrock request body to S3
-                                              |
-        4. Bedrock InvokeModel with S3 input and output -> summary, chapters, tags
+        3. Bedrock InvokeModel with S3 input and output -> summary, chapters, tags
                                               |
         5. set_video_status(key, [processing] -> ready, results)
                                               |
@@ -156,8 +162,9 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
    `uploads/*.done`, which starts the state machine with the marker's key.
    The state machine strips `.done` to get the video key.
 6. The state machine runs the steps in the processing path above. Large data
-   (transcripts, labels, Bedrock input and output) stays in S3; only S3 keys
-   pass through the state, which keeps it under the 256 KB limit.
+   (video files, transcripts, labels, Bedrock input and output) stays in S3;
+   only S3 keys pass through the state, which keeps it under the 256 KB
+   limit.
 7. The dashboard reads the status from Aurora. Once `ready`, CloudFront
    serves the HLS files from `processed/` with a signed cookie.
 
@@ -219,21 +226,23 @@ per GB.
 ### Scaling
 
 - **API tasks**: ECS target tracking on average CPU at 60%.
-- **Worker tasks**: one short task per video, started by Step Functions.
-  They only reshape JSON, so they share the API's instances.
+- **Worker tasks**: one task per video, started by Step Functions on the
+  worker capacity provider. Its Auto Scaling group scales from zero and its
+  maximum size is the real cap on parallel videos; extra tasks wait in
+  `PROVISIONING` until an instance has room.
 - **EC2 instances**: an ECS capacity provider with managed scaling grows and
   shrinks the Auto Scaling group so the tasks have room.
-- **Media jobs**: MediaConvert, Transcribe, Rekognition and Bedrock are
-  managed services; their quotas are the limit. A Standard state machine has
-  no concurrency cap, so a burst of uploads relies on the Retry with backoff.
+- **Managed calls**: Rekognition and Bedrock quotas are the limit. A
+  Standard state machine has no concurrency cap, so a burst of uploads
+  relies on the worker's maximum size and on Retry with backoff.
 
 ### Alternatives considered
 
 | Choice | Picked | Rejected and why |
 |---|---|---|
 | Upload path | Through the API to Mountpoint | Presigned PUT straight to S3: needs request signing, which means the SDK or hand-written SigV4. CloudFront OAC PUT: needs per-part signing for big files, loses the no-overwrite guard, and splits local dev from AWS. |
-| Watermark and previews | MediaConvert (image inserter, frame capture) | An ffmpeg task: re-encodes what MediaConvert already produced, and Mountpoint cannot seek back to finish an MP4. |
-| Transcript to Bedrock | Small Go worker task | Doing it inside the state machine: a long transcript passes the 256 KB state limit, and there is no code step without the SDK. |
+| Transcoding and transcription | Go worker with ffmpeg and whisper.cpp on its own Auto Scaling group | MediaConvert and Transcribe: blocked on the AWS Free plan. Running the worker on the API's instances: brings back the CPU starvation the problem statement is about. |
+| Transcript to Bedrock | The same Go worker writes the request body | Doing it inside the state machine: a long transcript passes the 256 KB state limit, and there is no code step without the SDK. |
 | Status updates | One Postgres function, called by both API and pipeline | Pipeline writes a results file that the API reads back: a lagging dashboard and extra read code. |
 
 ### Known limits
@@ -243,15 +252,17 @@ per GB.
   CloudFront or ALB timeout, and scale-in can cut off an upload in progress.
 - **One NAT Gateway in AZ A.** If AZ A fails, instances in AZ B cannot pull
   images. Accepted for cost.
-- **Max video:** 5 GiB per upload and 4 hours (Transcribe's limit).
+- **Max video:** 5 GiB per upload. whisper.cpp on CPU takes roughly as long
+  as the video or longer, so a long video takes a long time to be `ready`.
+- **Bedrock on the Free plan** has not been checked yet; if it is blocked,
+  the summary step waits for a plan upgrade.
 - **Retention:** the `expire-test-uploads` rule deletes `uploads/` after
   3 days. That is a test setting. Playback after `ready` comes from
   `processed/`, so expiry only blocks re-processing an old video.
 - **Cost:** EC2, the NAT Gateway, the ALB and Aurora bill by the hour even
   when idle. Tear the stack down after demos.
-- **Region:** the default is `ap-south-1`. The Bedrock model and the
-  Rekognition Video features must be checked there before the state machine
-  is built.
+- **Region:** `ap-south-1`. Rekognition Video works there (checked); the
+  Bedrock model still has to be checked.
 
 ### Later
 
@@ -267,7 +278,7 @@ per GB.
 | Networking & delivery | VPC, Subnets, Route Tables, Internet Gateway, NAT Gateway, S3 gateway endpoint, Security Groups, Application Load Balancer, CloudFront, Route 53, ACM |
 | Storage & database | S3 (SSE-S3 encryption, lifecycle expiry on uploads/), Mountpoint for S3, Aurora PostgreSQL with the RDS Data API |
 | Orchestration | EventBridge, Step Functions (Standard) |
-| Media & AI | MediaConvert, Transcribe, Rekognition Video, Amazon Bedrock |
+| Media & AI | Rekognition Video, Amazon Bedrock (ffmpeg and whisper.cpp run in our worker) |
 | Notifications | SNS |
 | Security | Cognito, IAM roles (instance, task, state machine), Secrets Manager, Systems Manager Session Manager, AWS WAF, CloudTrail |
 | Monitoring & cost | CloudWatch Logs, metrics, alarms, CloudWatch agent, AWS Budgets |
@@ -284,12 +295,11 @@ instead of deleting it.
 **Terraform:**
 - Network: VPC, subnets, NAT, S3 endpoint, security groups, ALB,
   CloudFront, WAF, ACM, Route 53 records
-- Compute: launch template (installs Mountpoint), Auto Scaling group, ECS
-  cluster, capacity provider, task definitions, services, scaling policies,
-  ECR
+- Compute: launch templates (install Mountpoint), two Auto Scaling groups
+  (API, worker), ECS cluster, two capacity providers, task definitions,
+  services, scaling policies, ECR
 - Data: Aurora, S3 bucket (lifecycle, encryption, EventBridge notifications)
-- Pipeline: EventBridge rule, Step Functions state machine, MediaConvert
-  role, SNS topic
+- Pipeline: EventBridge rule, Step Functions state machine, SNS topic
 - Security and ops: Cognito user pool, IAM roles, Secrets Manager secrets,
   CloudTrail, CloudWatch log groups and alarms
 
@@ -305,7 +315,7 @@ checks such as reading a state machine run.
 |---|---|---|
 | Save upload to S3 | Mountpoint for S3 on the EC2 host | Launch template user data |
 | Start the pipeline | S3 -> EventBridge rule on `uploads/*.done` | Terraform |
-| MediaConvert, Transcribe, Rekognition, Bedrock | Step Functions service integrations | State machine definition |
+| Rekognition, Bedrock, S3 writes of small results | Step Functions service integrations | State machine definition |
 | Run the worker task | Step Functions `ecs:runTask.sync` | State machine definition |
 | Update video status | Step Functions -> RDS Data API -> `set_video_status` | State machine definition |
 | Send email | Step Functions -> SNS | State machine definition |
@@ -329,14 +339,23 @@ Done:
       EventBridge rule on `uploads/*.done` logging to CloudWatch Logs until
       Step Functions is the target
 
+- [x] Upload filenames cleaned to `[A-Za-z0-9._-]`, so S3 keys never need
+      URL encoding in events
+- [x] Terraform: SNS topic and a first Step Functions pipeline (Rekognition
+      labels on the upload, `labels.json` to S3, SNS email; Retry on
+      throttling, failure alert), started by the EventBridge rule
+
+- [x] Go worker (`cmd/worker`): ffmpeg HLS ladder capped at the source
+      height, thumbnails, H.264 MP4, whisper.cpp transcript, Bedrock request
+      body; tested end to end with ffmpeg and a stand-in whisper script
+
 To do, in build order:
-- [ ] Terraform: SNS topic
-- [ ] Terraform: Step Functions state machine with MediaConvert, Transcribe,
-      Rekognition, the worker task and Bedrock
-- [ ] Go worker (`cmd/worker`): transcript to Bedrock request body
-- [ ] Dockerfiles for the API (with the worker) and Nginx; push to ECR
-- [ ] Terraform: VPC, ALB, EC2 Auto Scaling group (Mountpoint), ECS, Aurora
+- [ ] Run the worker with real whisper.cpp and a model
+- [ ] Dockerfiles for the API, the worker and Nginx; push to ECR
+- [ ] Terraform: VPC, ALB, EC2 Auto Scaling groups (Mountpoint), ECS, Aurora
       with Data API
+- [ ] Pipeline: add `set_video_status`, the worker task and Bedrock; run
+      Rekognition on the worker's MP4
 - [ ] Replace JWT auth with Cognito on the ALB and the identity middleware
 - [ ] Terraform: CloudFront, WAF, Route 53, Cognito, alarms, CloudTrail;
       playback cookie endpoint
@@ -345,10 +364,10 @@ To do, in build order:
 
 - **Frontend**: React + TypeScript + Vite + Tailwind
 - **Backend**: Go (Gin) API, Postgres, no AWS SDK
-- **Worker task**: a `cmd/worker` subcommand in the API image. Step
-  Functions passes the video key as an env var; the task reads and writes
-  small JSON files through the Mountpoint folder, which ECS bind-mounts from
-  the host
+- **Worker task**: a `cmd/worker` Go program in its own image with ffmpeg
+  and whisper.cpp. Step Functions passes the video key as an env var; the
+  task reads the upload through the Mountpoint folder (bind-mounted from the
+  host), works on local scratch disk, then copies results to the mount
 - **Infrastructure**: AWS Console to learn each service, then Terraform
 
 ## Project layout
@@ -356,6 +375,8 @@ To do, in build order:
 ```
 backend/
   cmd/server/         API server entrypoint
+  cmd/worker/         pipeline worker entrypoint (one video per run)
+  internal/worker/    ffmpeg, whisper.cpp and Bedrock request steps
   internal/config/    env-based configuration
   internal/db/        Postgres connection + embedded SQL migrations
   internal/models/    shared data types
@@ -411,6 +432,23 @@ Every variable has a local-dev default.
 | `JWT_SECRET` | `dev-secret-change-me` | Signs JWTs and the short-lived `/api/files/...` upload and playback URLs (HMAC-SHA256); outside local dev, use at least 32 random bytes. After the move to Cognito it only signs file URLs and will be renamed |
 | `LOCAL_DATA_DIR` | `./data` | Video folder; `/mnt/videos` (Mountpoint for S3) on AWS |
 | `REQUIRE_MOUNT` | _(empty)_ | Set to `true` on AWS: the API refuses to start if `LOCAL_DATA_DIR` is not a mount point, so uploads never land on the instance disk by mistake |
+
+### Worker
+
+| Variable | Default | Description |
+|---|---|---|
+| `VIDEO_KEY` | _(required)_ | Upload key, for example `uploads/<user>/<file>`; set by Step Functions |
+| `WHISPER_MODEL` | _(required)_ | Path to the whisper.cpp model file, for example `ggml-base.bin` |
+| `WHISPER_BIN` | `whisper-cli` | whisper.cpp command |
+| `LOCAL_DATA_DIR` | `./data` | Same folder as the API; results go to `processed/<user>/<file>/` |
+| `SCRATCH_DIR` | system temp dir | Local disk for ffmpeg work before copying to the mount |
+| `REQUIRE_MOUNT` | _(empty)_ | `true` on AWS, same check as the API |
+
+Run one video locally:
+
+```bash
+cd backend && VIDEO_KEY=uploads/<user>/<file> WHISPER_MODEL=/path/to/ggml-base.bin go run ./cmd/worker
+```
 
 ### Frontend
 

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -42,7 +43,7 @@ func (h *VideoHandler) Create(c *gin.Context) {
 		return
 	}
 
-	key := fmt.Sprintf("uploads/%s/%d-%s", userID, time.Now().UnixNano(), path.Base(req.Filename))
+	key := fmt.Sprintf("uploads/%s/%d-%s", userID, time.Now().UnixNano(), safeFilename(req.Filename))
 	if strings.HasSuffix(key, storage.DoneSuffix) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "filename must not end in " + storage.DoneSuffix})
 		return
@@ -85,6 +86,12 @@ func (h *VideoHandler) Detail(c *gin.Context) {
 }
 
 const maxUploadBytes = 5 << 30
+
+var unsafeFilenameChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+func safeFilename(name string) string {
+	return unsafeFilenameChars.ReplaceAllString(path.Base(name), "-")
+}
 
 type FilesHandler struct {
 	Store   *store.Store

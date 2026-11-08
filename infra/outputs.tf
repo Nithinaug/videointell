@@ -9,3 +9,11 @@ output "event_rule" {
 output "event_log_group" {
   value = aws_cloudwatch_log_group.video_uploaded.name
 }
+
+output "pipeline" {
+  value = aws_sfn_state_machine.pipeline.arn
+}
+
+output "notifications_topic" {
+  value = aws_sns_topic.notifications.arn
+}
