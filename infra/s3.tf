@@ -25,6 +25,10 @@ import {
 
 resource "aws_s3_bucket" "videos" {
   bucket = local.bucket
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_s3_bucket_public_access_block" "videos" {

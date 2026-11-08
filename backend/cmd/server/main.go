@@ -24,9 +24,14 @@ func main() {
 	st := store.New(dbx)
 
 	authHandler := &handlers.AuthHandler{Store: st, JWTSecret: cfg.JWTSecret}
+	if cfg.RequireMount {
+		if err := storage.CheckMount(cfg.LocalDataDir); err != nil {
+			log.Fatalf("storage: %v", err)
+		}
+	}
 	local := storage.NewLocalStorage(cfg.LocalDataDir, cfg.JWTSecret)
 	videoHandler := &handlers.VideoHandler{Store: st, Storage: local}
-	files := &handlers.FilesHandler{Storage: local}
+	files := &handlers.FilesHandler{Store: st, Storage: local}
 	log.Printf("storage: %s", cfg.LocalDataDir)
 
 	r := router.New(router.Deps{

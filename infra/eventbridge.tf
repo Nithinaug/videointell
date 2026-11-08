@@ -1,13 +1,13 @@
 resource "aws_cloudwatch_event_rule" "video_uploaded" {
   name        = "${local.name}-video-uploaded"
-  description = "New object under uploads/ in the video bucket"
+  description = "Upload finished: .done marker under uploads/ in the video bucket"
 
   event_pattern = jsonencode({
     source      = ["aws.s3"]
     detail-type = ["Object Created"]
     detail = {
       bucket = { name = [aws_s3_bucket.videos.id] }
-      object = { key = [{ prefix = "uploads/" }] }
+      object = { key = [{ wildcard = "uploads/*.done" }] }
     }
   })
 }

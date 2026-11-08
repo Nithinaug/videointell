@@ -70,7 +70,8 @@ func (s *Store) GetVideo(id string) (models.Video, error) {
 	return v, err
 }
 
-func (s *Store) UpdateVideoStatus(id, status string) error {
-	_, err := s.db.Exec(`UPDATE videos SET status=$1, updated_at=now() WHERE id=$2`, status, id)
-	return err
+func (s *Store) SetVideoStatus(originalKey string, from []string, to string) (bool, error) {
+	var changed bool
+	err := s.db.Get(&changed, `SELECT set_video_status($1, $2, $3)`, originalKey, pq.Array(from), to)
+	return changed, err
 }

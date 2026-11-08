@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"github.com/jmoiron/sqlx/types"
+)
 
 type User struct {
 	ID           string    `db:"id" json:"id"`
@@ -10,14 +14,15 @@ type User struct {
 }
 
 type Video struct {
-	ID          string    `db:"id" json:"id"`
-	UserID      string    `db:"user_id" json:"user_id"`
-	Title       string    `db:"title" json:"title"`
-	OriginalKey string    `db:"original_key" json:"-"`
-	ContentType string    `db:"content_type" json:"content_type"`
-	Status      string    `db:"status" json:"status"`
-	CreatedAt   time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
+	ID          string             `db:"id" json:"id"`
+	UserID      string             `db:"user_id" json:"user_id"`
+	Title       string             `db:"title" json:"title"`
+	OriginalKey string             `db:"original_key" json:"-"`
+	ContentType string             `db:"content_type" json:"content_type"`
+	Status      string             `db:"status" json:"status"`
+	Results     types.NullJSONText `db:"results" json:"-"`
+	CreatedAt   time.Time          `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time          `db:"updated_at" json:"updated_at"`
 }
 
 type VideoDetail struct {

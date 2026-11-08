@@ -63,3 +63,20 @@ func TestSignedURLs(t *testing.T) {
 		t.Error("expired signature accepted")
 	}
 }
+
+func TestMarkDoneAndCheckMount(t *testing.T) {
+	dir := t.TempDir()
+	l := NewLocalStorage(dir, "s")
+	if err := l.MarkDone("uploads/u1/1-a.mp4"); err != nil {
+		t.Fatalf("MarkDone: %v", err)
+	}
+	if _, err := l.Path("uploads/u1/1-a.mp4" + DoneSuffix); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.MarkDone("uploads/u1/1-a.mp4"); err == nil {
+		t.Error("second MarkDone succeeded, want error")
+	}
+	if err := CheckMount(dir); err == nil {
+		t.Errorf("CheckMount(%q) passed for a plain folder", dir)
+	}
+}

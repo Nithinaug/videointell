@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { completeUpload, createVideo, uploadFile } from '../api/client'
+import { createVideo, uploadFile } from '../api/client'
 
 export default function Upload() {
   const navigate = useNavigate()
@@ -20,9 +20,6 @@ export default function Upload() {
 
       setProgress('Uploading file...')
       await uploadFile(upload_url, file, contentType)
-
-      setProgress('Finalizing...')
-      await completeUpload(video.id)
 
       navigate(`/videos/${video.id}`)
     } catch (err: any) {

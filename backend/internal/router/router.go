@@ -33,7 +33,6 @@ func New(d Deps) *gin.Engine {
 			videos.POST("", d.VideoHandler.Create)
 			videos.GET("", d.VideoHandler.List)
 			videos.GET("/:id", d.VideoHandler.Detail)
-			videos.POST("/:id/complete", d.VideoHandler.CompleteUpload)
 		}
 	}
 

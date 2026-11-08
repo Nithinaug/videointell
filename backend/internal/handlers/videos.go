@@ -43,6 +43,10 @@ func (h *VideoHandler) Create(c *gin.Context) {
 	}
 
 	key := fmt.Sprintf("uploads/%s/%d-%s", userID, time.Now().UnixNano(), path.Base(req.Filename))
+	if strings.HasSuffix(key, storage.DoneSuffix) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "filename must not end in " + storage.DoneSuffix})
+		return
+	}
 	video, err := h.Store.CreateVideo(userID, req.Title, key, req.ContentType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -50,24 +54,6 @@ func (h *VideoHandler) Create(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"video": video, "upload_url": h.Storage.UploadURL(key)})
-}
-
-func (h *VideoHandler) CompleteUpload(c *gin.Context) {
-	userID := c.GetString("user_id")
-	videoID := c.Param("id")
-
-	video, err := h.Store.GetVideo(videoID)
-	if err != nil || video.UserID != userID {
-		c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
-		return
-	}
-
-	if err := h.Store.UpdateVideoStatus(videoID, "uploaded"); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"status": "uploaded"})
 }
 
 func (h *VideoHandler) List(c *gin.Context) {
@@ -91,7 +77,7 @@ func (h *VideoHandler) Detail(c *gin.Context) {
 	}
 
 	detail := models.VideoDetail{Video: video}
-	if video.Status == "uploaded" {
+	if video.Status != "uploading" {
 		detail.URL = h.Storage.PlaybackURL(video.OriginalKey)
 	}
 
@@ -101,6 +87,7 @@ func (h *VideoHandler) Detail(c *gin.Context) {
 const maxUploadBytes = 5 << 30
 
 type FilesHandler struct {
+	Store   *store.Store
 	Storage *storage.LocalStorage
 }
 
@@ -123,7 +110,7 @@ func (h *FilesHandler) Upload(c *gin.Context) {
 	var tooBig *http.MaxBytesError
 	switch {
 	case err == nil:
-		c.Status(http.StatusOK)
+		h.finishUpload(c, key)
 	case errors.Is(err, fs.ErrExist):
 		c.JSON(http.StatusConflict, gin.H{"error": "file already uploaded"})
 	case errors.As(err, &tooBig):
@@ -132,6 +119,20 @@ func (h *FilesHandler) Upload(c *gin.Context) {
 		log.Printf("upload %s: %v", key, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload failed"})
 	}
+}
+
+func (h *FilesHandler) finishUpload(c *gin.Context, key string) {
+	if _, err := h.Store.SetVideoStatus(key, []string{"uploading"}, "uploaded"); err != nil {
+		log.Printf("set uploaded %s: %v", key, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload failed"})
+		return
+	}
+	if err := h.Storage.MarkDone(key); err != nil {
+		log.Printf("mark done %s: %v", key, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload failed"})
+		return
+	}
+	c.Status(http.StatusOK)
 }
 
 func (h *FilesHandler) File(c *gin.Context) {

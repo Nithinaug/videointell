@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -19,6 +20,7 @@ const (
 	uploadURLTTL   = 15 * time.Minute
 	playbackURLTTL = time.Hour
 	filesPrefix    = "/api/files/"
+	DoneSuffix     = ".done"
 )
 
 var ErrBadSignature = errors.New("invalid or expired signature")
@@ -73,6 +75,28 @@ func (l *LocalStorage) Write(key string, body io.Reader) error {
 	if err := f.Close(); err != nil {
 		os.Remove(path)
 		return err
+	}
+	return nil
+}
+
+func (l *LocalStorage) MarkDone(key string) error {
+	return l.Write(key+DoneSuffix, strings.NewReader(""))
+}
+
+func CheckMount(dir string) error {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	var d, parent syscall.Stat_t
+	if err := syscall.Stat(abs, &d); err != nil {
+		return err
+	}
+	if err := syscall.Stat(filepath.Dir(abs), &parent); err != nil {
+		return err
+	}
+	if d.Dev == parent.Dev {
+		return fmt.Errorf("%s is not a mount point", abs)
 	}
 	return nil
 }

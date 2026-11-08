@@ -23,7 +23,7 @@ export interface Video {
   user_id: string
   title: string
   content_type: string
-  status: 'uploading' | 'uploaded'
+  status: 'uploading' | 'uploaded' | 'processing' | 'ready' | 'failed'
   created_at: string
   updated_at: string
 }
@@ -59,11 +59,6 @@ export async function createVideo(title: string, filename: string, contentType: 
 
 export async function uploadFile(uploadUrl: string, file: File, contentType: string) {
   await axios.put(API_BASE_URL + uploadUrl, file, { headers: { 'Content-Type': contentType } })
-}
-
-export async function completeUpload(videoId: string) {
-  const { data } = await api.post(`/api/videos/${videoId}/complete`)
-  return data
 }
 
 export async function getVideoDetail(videoId: string) {
