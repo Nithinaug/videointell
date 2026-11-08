@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 
@@ -26,25 +25,10 @@ func main() {
 	st := store.New(dbx)
 
 	authHandler := &handlers.AuthHandler{Store: st, JWTSecret: cfg.JWTSecret}
-	videoHandler := &handlers.VideoHandler{Store: st}
-	var localFiles *handlers.LocalFilesHandler
-
-	switch cfg.StorageBackend {
-	case "s3":
-		s3Storage, err := storage.NewS3Storage(context.Background(), cfg.S3Bucket)
-		if err != nil {
-			log.Fatalf("s3 storage: %v", err)
-		}
-		videoHandler.Storage = s3Storage
-		log.Printf("storage: s3 (bucket %s)", cfg.S3Bucket)
-	case "local":
-		local := storage.NewLocalStorage(cfg.LocalDataDir, fmt.Sprintf("http://localhost:%s", cfg.Port))
-		videoHandler.Storage = local
-		localFiles = &handlers.LocalFilesHandler{Storage: local}
-		log.Printf("storage: local (%s)", cfg.LocalDataDir)
-	default:
-		log.Fatalf("unknown STORAGE_BACKEND %q (want local or s3)", cfg.StorageBackend)
-	}
+	local := storage.NewLocalStorage(cfg.LocalDataDir, fmt.Sprintf("http://localhost:%s", cfg.Port))
+	videoHandler := &handlers.VideoHandler{Store: st, Storage: local}
+	localFiles := &handlers.LocalFilesHandler{Storage: local}
+	log.Printf("storage: %s", cfg.LocalDataDir)
 
 	r := router.New(router.Deps{
 		AuthHandler:  authHandler,

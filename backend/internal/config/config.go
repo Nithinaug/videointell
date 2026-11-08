@@ -7,9 +7,6 @@ type Config struct {
 	DatabaseURL  string
 	JWTSecret    string
 	LocalDataDir string
-
-	StorageBackend string
-	S3Bucket       string
 }
 
 func Load() Config {
@@ -18,9 +15,6 @@ func Load() Config {
 		DatabaseURL:  getEnv("DATABASE_URL", "postgres://videointell:videointell@localhost:5432/videointell?sslmode=disable"),
 		JWTSecret:    getEnv("JWT_SECRET", "dev-secret-change-me"),
 		LocalDataDir: getEnv("LOCAL_DATA_DIR", "./data"),
-
-		StorageBackend: getEnv("STORAGE_BACKEND", "local"),
-		S3Bucket:       getEnv("S3_BUCKET", ""),
 	}
 }
 

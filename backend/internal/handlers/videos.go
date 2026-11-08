@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,14 +15,9 @@ import (
 	"videointell/backend/internal/store"
 )
 
-type ObjectStorage interface {
-	PresignUpload(ctx context.Context, key, contentType string) (string, error)
-	PublicURL(ctx context.Context, key string) (string, error)
-}
-
 type VideoHandler struct {
 	Store   *store.Store
-	Storage ObjectStorage
+	Storage *storage.LocalStorage
 }
 
 type createVideoRequest struct {

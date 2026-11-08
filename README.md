@@ -227,8 +227,8 @@ machine run). No SDK, CDK or SAM anywhere.
 
 - [x] Go API, Postgres, React frontend
 - [x] Uploads and playback through local storage
-- [ ] Remove the AWS SDK: replace the S3 presign backend with files on the
-      Mountpoint path
+- [x] AWS SDK removed: the API only writes and reads files, which become S3
+      objects through the Mountpoint folder on AWS
 - [ ] Replace JWT auth with Cognito on the ALB
 - [ ] Terraform: S3 buckets, EventBridge rule, SNS topic
 - [ ] Terraform: Step Functions state machine with MediaConvert, Transcribe,
@@ -256,7 +256,7 @@ backend/
   internal/models/    shared data types
   internal/store/     SQL queries
   internal/auth/      JWT + password hashing (to be replaced by Cognito on the ALB)
-  internal/storage/   local filesystem storage (S3 presign backend to be removed)
+  internal/storage/   file storage (local folder, or the Mountpoint for S3 folder on AWS)
   internal/handlers/  HTTP handlers
   internal/router/    route wiring
 frontend/
@@ -305,8 +305,6 @@ Every variable has a local-dev default.
 | `DATABASE_URL` | `postgres://videointell:videointell@localhost:5432/videointell?sslmode=disable` | Postgres connection string; on AWS built from the Secrets Manager value ECS injects |
 | `JWT_SECRET` | `dev-secret-change-me` | JWT signing secret; goes away when Cognito on the ALB replaces JWT |
 | `LOCAL_DATA_DIR` | `./data` | Video folder; `/mnt/videos` (Mountpoint for S3) on AWS |
-| `STORAGE_BACKEND` | `local` | `local` or `s3`; the `s3` option uses the SDK and will be removed |
-| `S3_BUCKET` | _(empty)_ | Only for `STORAGE_BACKEND=s3`; will be removed |
 
 ### Frontend
 

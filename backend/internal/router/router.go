@@ -19,10 +19,8 @@ func New(d Deps) *gin.Engine {
 
 	r.GET("/healthz", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 
-	if d.LocalFiles != nil {
-		r.PUT("/local-upload/*key", d.LocalFiles.Upload)
-		r.GET("/local-files/*key", d.LocalFiles.File)
-	}
+	r.PUT("/local-upload/*key", d.LocalFiles.Upload)
+	r.GET("/local-files/*key", d.LocalFiles.File)
 
 	api := r.Group("/api")
 	{
