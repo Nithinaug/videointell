@@ -365,8 +365,11 @@ Done:
       template, capacity provider, task definition; the pipeline runs the
       worker before Rekognition
 
+- [x] Worker image pushed; pipeline run on AWS end to end (`.done` marker ->
+      worker on a fresh instance -> Rekognition -> `labels.json`): about
+      3.5 min from a cold start, about 40 s when an instance is already up
+
 To do, in build order:
-- [ ] Push the worker image and run the pipeline on AWS end to end
 - [ ] Terraform: VPC, ALB, EC2 Auto Scaling groups (Mountpoint), ECS, Aurora
       with Data API
 - [ ] Pipeline: add `set_video_status`, the worker task and Bedrock; run

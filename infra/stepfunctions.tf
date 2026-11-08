@@ -105,7 +105,7 @@ locals {
         Arguments = {
           Bucket      = "{% $bucket %}"
           Key         = "{% $out & 'labels.json' %}"
-          Body        = "{% $string($states.input.labels) %}"
+          Body        = "{% $states.input.labels %}"
           ContentType = "application/json"
         }
         Retry = local.retry_throttling
