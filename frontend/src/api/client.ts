@@ -58,7 +58,7 @@ export async function createVideo(title: string, filename: string, contentType: 
 }
 
 export async function uploadFile(uploadUrl: string, file: File, contentType: string) {
-  await axios.put(uploadUrl, file, { headers: { 'Content-Type': contentType } })
+  await axios.put(API_BASE_URL + uploadUrl, file, { headers: { 'Content-Type': contentType } })
 }
 
 export async function completeUpload(videoId: string) {
@@ -68,5 +68,6 @@ export async function completeUpload(videoId: string) {
 
 export async function getVideoDetail(videoId: string) {
   const { data } = await api.get<VideoDetail>(`/api/videos/${videoId}`)
+  if (data.url) data.url = API_BASE_URL + data.url
   return data
 }

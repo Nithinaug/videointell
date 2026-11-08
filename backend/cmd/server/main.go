@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 
 	"videointell/backend/internal/config"
@@ -25,15 +24,15 @@ func main() {
 	st := store.New(dbx)
 
 	authHandler := &handlers.AuthHandler{Store: st, JWTSecret: cfg.JWTSecret}
-	local := storage.NewLocalStorage(cfg.LocalDataDir, fmt.Sprintf("http://localhost:%s", cfg.Port))
+	local := storage.NewLocalStorage(cfg.LocalDataDir, cfg.JWTSecret)
 	videoHandler := &handlers.VideoHandler{Store: st, Storage: local}
-	localFiles := &handlers.LocalFilesHandler{Storage: local}
+	files := &handlers.FilesHandler{Storage: local}
 	log.Printf("storage: %s", cfg.LocalDataDir)
 
 	r := router.New(router.Deps{
 		AuthHandler:  authHandler,
 		VideoHandler: videoHandler,
-		LocalFiles:   localFiles,
+		Files:        files,
 		JWTSecret:    cfg.JWTSecret,
 	})
 

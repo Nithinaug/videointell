@@ -93,7 +93,7 @@ Request path:
        SQL        |    | writes file to /mnt/videos               v
                   v    v                                 +----------------+
           +-----------+  +------------------------+      | S3  processed/ |
-          |  Aurora   |  | Mountpoint for S3      | ---> | S3  originals/ |
+          |  Aurora   |  | Mountpoint for S3      | ---> | S3  uploads/   |
           | Postgres  |  | (on the EC2 host)      |      +----------------+
           +-----------+  +------------------------+
 ```
@@ -102,7 +102,7 @@ Processing path:
 
 ```
    +---------------+  Object Created  +-------------+
-   | S3 originals/ | ---------------> | EventBridge |
+   | S3 uploads/   | ---------------> | EventBridge |
    +---------------+                  +------+------+
                                              |
                                              v
@@ -156,7 +156,7 @@ bills per GB.
 ```
 1. User signs in through Cognito on the ALB
 2. Browser posts the video to the API; the API writes it to /mnt/videos
-   (Mountpoint for S3), so it lands in S3 originals/
+   (Mountpoint for S3), so it lands in S3 uploads/
 3. The API inserts a video row in Aurora with status = uploaded
 4. S3 sends an Object Created event to EventBridge, which starts the
    Step Functions state machine
@@ -187,7 +187,7 @@ bills per GB.
 |---|---|
 | Compute | EC2, Launch Templates, Auto Scaling groups, ECS (EC2 launch type) with capacity providers, ECR, EBS gp3 |
 | Networking & delivery | VPC, Subnets, Route Tables, Internet Gateway, NAT Gateway, S3 gateway endpoint, Security Groups, Application Load Balancer, CloudFront, Route 53, ACM |
-| Storage & database | S3 (lifecycle to Glacier Instant Retrieval), Mountpoint for S3, Aurora PostgreSQL with the RDS Data API |
+| Storage & database | S3 (lifecycle expiry on uploads/), Mountpoint for S3, Aurora PostgreSQL with the RDS Data API |
 | Orchestration | EventBridge, Step Functions (Standard) |
 | Media & AI | MediaConvert, Transcribe, Rekognition Video, Amazon Bedrock |
 | Notifications | SNS |
@@ -230,7 +230,9 @@ machine run). No SDK, CDK or SAM anywhere.
 - [x] AWS SDK removed: the API only writes and reads files, which become S3
       objects through the Mountpoint folder on AWS
 - [ ] Replace JWT auth with Cognito on the ALB
-- [ ] Terraform: S3 buckets, EventBridge rule, SNS topic
+- [x] Terraform: S3 bucket (imported from the Console), EventBridge rule
+      logging to CloudWatch Logs until Step Functions is the target
+- [ ] Terraform: SNS topic
 - [ ] Terraform: Step Functions state machine with MediaConvert, Transcribe,
       Rekognition, Bedrock
 - [ ] Dockerfiles for API, Nginx and the ffmpeg task; push to ECR
@@ -303,7 +305,7 @@ Every variable has a local-dev default.
 |---|---|---|
 | `PORT` | `8080` | API listen port |
 | `DATABASE_URL` | `postgres://videointell:videointell@localhost:5432/videointell?sslmode=disable` | Postgres connection string; on AWS built from the Secrets Manager value ECS injects |
-| `JWT_SECRET` | `dev-secret-change-me` | JWT signing secret; goes away when Cognito on the ALB replaces JWT |
+| `JWT_SECRET` | `dev-secret-change-me` | Signs JWTs and the short-lived `/api/files/...` upload and playback URLs (HMAC-SHA256); must be strong outside local dev |
 | `LOCAL_DATA_DIR` | `./data` | Video folder; `/mnt/videos` (Mountpoint for S3) on AWS |
 
 ### Frontend
