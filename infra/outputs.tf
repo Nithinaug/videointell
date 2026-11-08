@@ -17,3 +17,7 @@ output "pipeline" {
 output "notifications_topic" {
   value = aws_sns_topic.notifications.arn
 }
+
+output "worker_repository" {
+  value = aws_ecr_repository.worker.repository_url
+}

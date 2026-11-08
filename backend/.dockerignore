@@ -1,0 +1,5 @@
+data/
+tmp/
+videointell-backend
+*.test
+Dockerfile*

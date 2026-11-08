@@ -32,14 +32,37 @@ locals {
           videoKey = "{% $substring($states.input.detail.object.key, 0, $length($states.input.detail.object.key) - 5) %}"
           out      = "{% 'processed/' & $substring($states.input.detail.object.key, 8, $length($states.input.detail.object.key) - 13) & '/' %}"
         }
-        Next = "StartLabelDetection"
+        Next = "ProcessVideo"
+      }
+
+      ProcessVideo = {
+        Type           = "Task"
+        Resource       = "arn:aws:states:::ecs:runTask.sync"
+        TimeoutSeconds = 10800
+        Arguments = {
+          Cluster        = aws_ecs_cluster.main.arn
+          TaskDefinition = aws_ecs_task_definition.worker.arn_without_revision
+          CapacityProviderStrategy = [{
+            CapacityProvider = aws_ecs_capacity_provider.worker.name
+            Weight           = 1
+          }]
+          Overrides = {
+            ContainerOverrides = [{
+              Name        = "worker"
+              Environment = [{ Name = "VIDEO_KEY", Value = "{% $videoKey %}" }]
+            }]
+          }
+        }
+        Output = "{% {} %}"
+        Catch  = local.catch_all
+        Next   = "StartLabelDetection"
       }
 
       StartLabelDetection = {
         Type     = "Task"
         Resource = "arn:aws:states:::aws-sdk:rekognition:startLabelDetection"
         Arguments = {
-          Video         = { S3Object = { Bucket = "{% $bucket %}", Name = "{% $videoKey %}" } }
+          Video         = { S3Object = { Bucket = "{% $bucket %}", Name = "{% $out & 'video.mp4' %}" } }
           MinConfidence = 80
         }
         Assign = { labelJob = "{% $states.result.JobId %}" }
@@ -149,13 +172,28 @@ data "aws_iam_policy_document" "pipeline" {
   }
 
   statement {
-    actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.videos.arn}/uploads/*"]
+    actions   = ["s3:GetObject", "s3:PutObject"]
+    resources = ["${aws_s3_bucket.videos.arn}/processed/*"]
   }
 
   statement {
-    actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.videos.arn}/processed/*"]
+    actions   = ["ecs:RunTask"]
+    resources = ["${aws_ecs_task_definition.worker.arn_without_revision}:*"]
+  }
+
+  statement {
+    actions   = ["ecs:StopTask", "ecs:DescribeTasks"]
+    resources = ["*"]
+  }
+
+  statement {
+    actions   = ["iam:PassRole"]
+    resources = [aws_iam_role.task_execution.arn]
+  }
+
+  statement {
+    actions   = ["events:PutTargets", "events:PutRule", "events:DescribeRule"]
+    resources = ["arn:aws:events:${var.region}:${data.aws_caller_identity.current.account_id}:rule/StepFunctionsGetEventsForECSTaskRule"]
   }
 
   statement {

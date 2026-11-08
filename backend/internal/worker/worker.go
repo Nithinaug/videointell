@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -199,7 +200,7 @@ func makeTranscript(cfg Config, src, work string, s source) error {
 		return err
 	}
 	defer os.Remove(wav)
-	cmd := exec.Command(cfg.WhisperBin, "-m", cfg.WhisperModel, "-f", wav, "-l", "auto", "-oj", "-ovtt", "-of", filepath.Join(work, "transcript"))
+	cmd := exec.Command(cfg.WhisperBin, "-m", cfg.WhisperModel, "-f", wav, "-t", strconv.Itoa(runtime.GOMAXPROCS(0)), "-l", "auto", "-oj", "-ovtt", "-of", filepath.Join(work, "transcript"))
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s: %w", cfg.WhisperBin, err)

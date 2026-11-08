@@ -217,6 +217,13 @@ unknown key changes nothing.
    DB Subnet: Aurora writer         DB Subnet: (later: Aurora reader)
 ```
 
+**Built so far (worker only):** two public subnets, an internet gateway and
+an S3 gateway endpoint, with no NAT Gateway. Worker instances get a public IP
+so they can pull images from ECR, and their security group allows no inbound
+traffic; a shell is still possible through Session Manager. This saves the
+NAT Gateway's hourly cost while only the worker exists. The private subnets
+and the NAT come with the API, ALB and Aurora.
+
 Traffic path: `Internet -> CloudFront -> ALB -> EC2 (ECS task) -> Aurora`.
 Instances have no public IPs and no SSH port; a shell comes through Session
 Manager. Outbound traffic (ECR pulls) goes through one NAT Gateway; an S3
@@ -349,9 +356,17 @@ Done:
       height, thumbnails, H.264 MP4, whisper.cpp transcript, Bedrock request
       body; tested end to end with ffmpeg and a stand-in whisper script
 
+- [x] Dockerfiles for the API (distroless), the worker (ffmpeg, whisper.cpp
+      v1.9.5 with the `base` model) and Nginx; worker image run locally with
+      real whisper.cpp
+- [x] Terraform for the AWS worker: ECR repository, VPC with public subnets
+      and S3 endpoint, ECS cluster, worker Auto Scaling group (0 to 1
+      `c7i-flex.large`, Free plan eligible) with Mountpoint in the launch
+      template, capacity provider, task definition; the pipeline runs the
+      worker before Rekognition
+
 To do, in build order:
-- [ ] Run the worker with real whisper.cpp and a model
-- [ ] Dockerfiles for the API, the worker and Nginx; push to ECR
+- [ ] Push the worker image and run the pipeline on AWS end to end
 - [ ] Terraform: VPC, ALB, EC2 Auto Scaling groups (Mountpoint), ECS, Aurora
       with Data API
 - [ ] Pipeline: add `set_video_status`, the worker task and Bedrock; run
@@ -434,6 +449,14 @@ Every variable has a local-dev default.
 | `REQUIRE_MOUNT` | _(empty)_ | Set to `true` on AWS: the API refuses to start if `LOCAL_DATA_DIR` is not a mount point, so uploads never land on the instance disk by mistake |
 
 ### Worker
+
+Push the image to ECR (after `terraform apply`):
+
+```bash
+REPO=$(terraform -chdir=infra output -raw worker_repository)
+aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${REPO%%/*}
+docker build -t $REPO:latest -f backend/Dockerfile.worker backend && docker push $REPO:latest
+```
 
 | Variable | Default | Description |
 |---|---|---|

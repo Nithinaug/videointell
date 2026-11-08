@@ -1,0 +1,31 @@
+FROM golang:1.26-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
+
+FROM debian:bookworm-slim AS whisper
+ARG WHISPER_VERSION=v1.9.5
+ARG WHISPER_MODEL=base
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch ${WHISPER_VERSION} https://github.com/ggml-org/whisper.cpp /whisper
+WORKDIR /whisper
+RUN cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DWHISPER_BUILD_TESTS=OFF \
+ && cmake --build build -j --target whisper-cli
+RUN sh ./models/download-ggml-model.sh ${WHISPER_MODEL} \
+ && mv models/ggml-${WHISPER_MODEL}.bin /model.bin
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg libgomp1 \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --uid 65532 --no-create-home --shell /usr/sbin/nologin worker
+COPY --from=whisper /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=whisper /model.bin /models/whisper.bin
+COPY --from=build /out/worker /usr/local/bin/worker
+ENV WHISPER_MODEL=/models/whisper.bin LOCAL_DATA_DIR=/mnt/videos
+USER 65532
+ENTRYPOINT ["worker"]
