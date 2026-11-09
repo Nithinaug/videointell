@@ -49,6 +49,7 @@ func main() {
 	r := router.New(router.Deps{
 		VideoHandler: videoHandler,
 		Files:        files,
+		Clips:        &handlers.ClipHandler{Videos: videoHandler},
 		Ask:          &handlers.AskHandler{Videos: videoHandler, AI: awsapi.NewBedrock(cfg.AWSRegion, cfg.BedrockModel)},
 		Auth:         handlers.AuthMiddleware(verifier, st),
 	})

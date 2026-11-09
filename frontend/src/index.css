@@ -39,7 +39,7 @@ body {
   z-index: 0;
   pointer-events: none;
   filter: blur(80px) saturate(140%);
-  opacity: 0.22;
+  opacity: 0.12;
 }
 
 .aurora span {

@@ -100,15 +100,11 @@ export default function Shell({ children }: { children: ReactNode }) {
     <div className="relative min-h-screen overflow-x-clip bg-[#0c0c0e] text-zinc-200">
       <Aurora />
       <header className="relative z-20 px-4 pt-4">
-        <nav className="glass mx-auto max-w-6xl flex items-center justify-between gap-3 rounded-2xl px-4 py-2.5">
-          <Link to="/" aria-label="Home" className="flex items-center">
-            <span className="grid place-items-center h-8 w-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-400 shadow-[0_0_24px_-4px_rgba(217,119,6,0.7)]">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-white" aria-hidden>
-                <path d="M8 5.5v13l10-6.5z" />
-              </svg>
-            </span>
+        <nav className="glass mx-auto grid max-w-6xl grid-cols-[1fr_auto] items-center gap-3 rounded-2xl px-4 py-2.5 md:grid-cols-[1fr_minmax(0,28rem)_1fr]">
+          <Link to="/" className="hidden text-sm font-medium text-zinc-400 transition-colors hover:text-white md:block">
+            Home
           </Link>
-          <form onSubmit={onSearch} role="search" className="relative min-w-0 flex-1 max-w-md">
+          <form onSubmit={onSearch} role="search" className="relative min-w-0">
             <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-3.5-3.5" />
@@ -162,7 +158,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               </div>
             )}
           </form>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center justify-end gap-2">
             <Link to="/upload" className="btn-glow rounded-xl px-3.5 py-2 text-sm font-semibold text-white">
               Upload
             </Link>

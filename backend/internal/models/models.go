@@ -29,3 +29,12 @@ type VideoDetail struct {
 	URL        string `json:"url,omitempty"`
 	ResultsURL string `json:"results_url,omitempty"`
 }
+
+type Clip struct {
+	ID        string    `db:"id" json:"id"`
+	VideoID   string    `db:"video_id" json:"video_id"`
+	Title     string    `db:"title" json:"title"`
+	StartMS   int64     `db:"start_ms" json:"start_ms"`
+	EndMS     int64     `db:"end_ms" json:"end_ms"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}

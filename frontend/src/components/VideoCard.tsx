@@ -11,7 +11,7 @@ export default function VideoCard({ video, big = false, onDeleted }: { video: Vi
   async function onDelete(e: MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    if (!confirm(`Delete "${video.title}"? This removes the video, its results and its record for good.`)) return
+    if (!confirm(`Delete "${video.title}"? This removes the video, its clips and its results for good.`)) return
     setDeleting(true)
     const done = deleteVideo(video.id)
     onDeleted()

@@ -42,6 +42,18 @@ export interface Progress {
   summary: boolean
 }
 
+export async function getProgress(videoId: string) {
+  const { data } = await api.get<Progress>(`/api/videos/${videoId}/progress`)
+  return data
+}
+
+export function progressPercent(p: Progress) {
+  if (p.status === 'ready' || p.summary) return 100
+  if (p.assembled) return 95
+  if (p.split && p.chunks > 0) return Math.round(10 + (75 * Math.min(p.chunks_done, p.chunks)) / p.chunks)
+  return p.status === 'processing' ? 5 : 0
+}
+
 export interface VideoDetail {
   video: Video
   url?: string
@@ -104,6 +116,29 @@ export interface SearchResult {
   skipped: string[]
 }
 
+export interface Clip {
+  id: string
+  video_id: string
+  title: string
+  start_ms: number
+  end_ms: number
+  created_at: string
+}
+
+export async function listClips(videoId: string) {
+  const { data } = await api.get<{ clips: Clip[] }>(`/api/videos/${videoId}/clips`)
+  return data.clips
+}
+
+export async function createClip(videoId: string, title: string, startMS: number, endMS: number) {
+  const { data } = await api.post<Clip>(`/api/videos/${videoId}/clips`, { title, start_ms: startMS, end_ms: endMS })
+  return data
+}
+
+export async function deleteClip(videoId: string, clipId: string) {
+  await api.delete(`/api/videos/${videoId}/clips/${clipId}`)
+}
+
 export interface AskResult {
   answer: string
   sources: SearchHit[]
@@ -132,11 +167,6 @@ export async function deleteVideo(videoId: string) {
 
 export function canDelete(status: Video['status']) {
   return status !== 'uploaded' && status !== 'processing'
-}
-
-export async function getProgress(videoId: string) {
-  const { data } = await api.get<Progress>(`/api/videos/${videoId}/progress`)
-  return data
 }
 
 export async function getVideoDetail(videoId: string) {

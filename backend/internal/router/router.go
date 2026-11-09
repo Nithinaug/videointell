@@ -10,6 +10,7 @@ type Deps struct {
 	VideoHandler *handlers.VideoHandler
 	Files        *handlers.FilesHandler
 	Ask          *handlers.AskHandler
+	Clips        *handlers.ClipHandler
 	Auth         gin.HandlerFunc
 }
 
@@ -34,6 +35,9 @@ func New(d Deps) *gin.Engine {
 			videos.GET("/:id", d.VideoHandler.Detail)
 			videos.GET("/:id/progress", d.VideoHandler.Progress)
 			videos.DELETE("/:id", d.VideoHandler.Delete)
+			videos.GET("/:id/clips", d.Clips.List)
+			videos.POST("/:id/clips", d.Clips.Create)
+			videos.DELETE("/:id/clips/:clip", d.Clips.Delete)
 		}
 		search := api.Group("/search")
 		search.Use(d.Auth)

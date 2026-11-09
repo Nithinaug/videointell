@@ -64,3 +64,26 @@ func (s *Store) SetVideoStatus(originalKey string, from []string, to string) (bo
 	err := s.db.Get(&changed, `SELECT set_video_status($1, $2, $3)`, originalKey, pq.Array(from), to)
 	return changed, err
 }
+
+const clipColumns = "id, video_id, title, start_ms, end_ms, created_at"
+
+func (s *Store) CreateClip(videoID, title string, startMS, endMS int64) (models.Clip, error) {
+	var c models.Clip
+	err := s.db.Get(&c, `INSERT INTO clips (video_id, title, start_ms, end_ms) VALUES ($1, $2, $3, $4) RETURNING `+clipColumns, videoID, title, startMS, endMS)
+	return c, err
+}
+
+func (s *Store) ListClips(videoID string) ([]models.Clip, error) {
+	clips := []models.Clip{}
+	err := s.db.Select(&clips, `SELECT `+clipColumns+` FROM clips WHERE video_id=$1 ORDER BY start_ms`, videoID)
+	return clips, err
+}
+
+func (s *Store) DeleteClip(videoID, clipID string) (bool, error) {
+	res, err := s.db.Exec(`DELETE FROM clips WHERE id=$1 AND video_id=$2`, clipID, videoID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
