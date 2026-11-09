@@ -24,7 +24,9 @@ way to check it works. Sections are added as each build step is finished.
 | Step 4: Aurora and video status | 13 | Done |
 | Step 5: app on ECS, Lambda fan-out | 14 | Done |
 | Step 6: Cognito sign-in | 15 | Done (CloudFront waiting on AWS verification) |
-| Steps 7-8 | - | Not started |
+| Step 7: operations | 16 | Done (WAF waits for CloudFront) |
+| App features: redesign, delete, search | 17 | Done |
+| Step 8 | - | Not started |
 
 ## The big picture
 
@@ -950,3 +952,74 @@ Open `http://localhost:5173`, create an account, enter the emailed code:
 the dashboard loads. `go test ./internal/cognito/` checks that tokens with
 the wrong audience, issuer, `token_use`, signing key, or an old expiry are
 refused.
+
+---
+
+## 16. Operations: budget, CloudTrail, alarms (step 7)
+
+**What:** an alert before Free plan credits run low, a record of every
+account change, and emails when the pipeline or API breaks.
+
+- **Budget `videointell-credit-burn`:** gross usage with credits excluded
+  ($25 a month). The Console's default budget counts cost after credits,
+  which stays near $0 while credits pay, so it would never warn. Alerts at
+  80% of actual and 100% of forecast go to the SNS topic.
+- **CloudTrail:** one multi-Region trail of management events (the first
+  copy is free) into its own bucket, deleted after 30 days.
+- **Alarms (4 of the 10 free):** pipeline executions failed, worker Lambda
+  errors, worker Lambda throttles (in `infra/ops.tf`), and API 5xx above 5
+  in 5 minutes (in `infra/app/app.tf`). All email through the SNS topic.
+
+### Console
+
+1. **Billing and Cost Management** -> **Budgets** -> **Create budget** ->
+   Cost budget, monthly, $25; under **Advanced options** untick **Credits**.
+   Alerts at 80% actual and 100% forecasted, to the SNS topic.
+2. **CloudTrail** -> **Create trail** -> new S3 bucket, all Regions,
+   management events only.
+3. **CloudWatch** -> **Alarms** -> **Create alarm** -> metric
+   `AWS/States ExecutionsFailed` for the state machine, Sum over 5 minutes
+   > 0, notify the SNS topic. Same for `AWS/Lambda Errors` and `Throttles`.
+
+### Terraform
+
+`infra/ops.tf`: the SNS topic policy (Budgets may publish), the budget,
+the trail bucket with its policy and lifecycle, the trail, and the alarms.
+
+### Check it
+
+Confirm the SNS email subscription (a "Subscription Confirmation" email).
+A failed run then sends both the pipeline's own failure email and, within
+5 minutes, the `pipeline-failed` alarm.
+
+---
+
+## 17. App features: redesign, delete, search
+
+No AWS setup: app code only.
+
+- **Look:** a dark "aurora glass" style: slow moving colour glows behind
+  frosted glass cards, a bento grid with the newest video large, cards that
+  tilt toward the cursor, page transitions where the card thumbnail grows
+  into the player (Motion `layoutId`), and a drag-and-drop upload with a
+  progress ring. Everything stops moving under the system's reduced-motion
+  setting.
+- **Live pipeline tracker:** while a video is processed, the page shows
+  Queued, Split, Chunks done out of total, Labels, Stitch and Summary,
+  every 3 seconds. The API works it out from files: `progress.json`
+  (written by Split with the chunk count), `work/.../done_NNNN` (one per
+  finished chunk), then `bedrock-request.json`, `labels.json` and
+  `summary.json`.
+- **Delete:** the trash icon on a card or the Delete button on the video
+  page. It removes everything in S3 for the video and its database row, and
+  is refused while the video is queued or processing.
+- **Transcript panel:** every spoken line with its time; click to jump, and
+  the current line is highlighted and kept in view.
+- **Search:** the nav box searches what was said in all ready videos. Each
+  result shows the thumbnail at that moment and opens the video playing
+  from that second.
+
+### Check it
+
+`go test ./...` in `backend/` covers the delete (a video's files go,
+another video's files stay, `..` is refused) and the search word matching.

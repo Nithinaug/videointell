@@ -305,3 +305,18 @@ resource "aws_ecs_service" "app" {
 
   depends_on = [aws_lb_listener_rule.api, aws_iam_role_policy.execution_ssm]
 }
+
+resource "aws_cloudwatch_metric_alarm" "api_5xx" {
+  alarm_name          = "${local.name}-api-5xx"
+  alarm_description   = "API returned more than 5 server errors in 5 minutes"
+  namespace           = "AWS/ApplicationELB"
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  dimensions          = { LoadBalancer = aws_lb.main.arn_suffix }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 5
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [local.base.notifications_topic]
+}

@@ -217,7 +217,6 @@ func (h *VideoHandler) Progress(c *gin.Context) {
 		"chunks":      plan.Chunks,
 		"chunks_done": min(done, plan.Chunks),
 		"assembled":   exists(out + "bedrock-request.json"),
-		"labels":      exists(out + "labels.json"),
 		"summary":     exists(out + "summary.json"),
 	})
 }

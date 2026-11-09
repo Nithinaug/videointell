@@ -175,8 +175,11 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
    (video files, transcripts, labels, Bedrock input and output) stays in S3;
    only S3 keys pass through the state, which keeps it under the 256 KB
    limit.
-7. The dashboard reads the status from Aurora. Once `ready`, CloudFront
-   serves the HLS files from `processed/` with a signed cookie.
+7. The dashboard reads the status from Aurora, and while a video is being
+   processed the video page polls `GET /api/videos/:id/progress` (split done,
+   chunks done out of total, labels, stitch, summary), worked out from marker
+   files the Lambdas write. Once `ready`, the player streams the HLS files
+   from `processed/` through a signed results-folder URL.
 
 ### Video status
 
@@ -211,12 +214,20 @@ unknown key changes nothing.
   CloudFront origin-facing prefix list, so requests cannot skip WAF.
 - **Uploads:** `PUT /api/files/...` with an HMAC-signed, 15-minute URL, on
   AWS and locally.
-- **Playback on AWS:** CloudFront `/media/*` with signed cookies. One API
-  endpoint issues the cookie for a video the user owns, signed with Go's
-  `crypto/rsa`; the private key is in Secrets Manager. Key rotation is not
-  planned yet.
-- **Playback locally:** `GET /api/files/...` with an HMAC-signed URL. This
-  route is for local dev only.
+- **Playback:** `GET /api/results/<exp>/<sig>/processed/<user>/<file>/...`.
+  The signature covers one video's results folder for one hour and sits in
+  the path, so the HLS playlists' relative links to segments keep working.
+  The API serves the files through Mountpoint. CloudFront signed cookies
+  could replace this later.
+- **Original upload:** `GET /api/files/...` with an HMAC-signed URL, used
+  while a video is still processing.
+- **Search:** `GET /api/search?q=` reads the user's ready transcripts and
+  returns up to 50 lines that contain every word, each with its video and
+  start time; the app opens the video at that second (`?t=`).
+- **Delete:** `DELETE /api/videos/:id` removes the upload, its marker, the
+  results and the work chunks through Mountpoint, then the database row.
+  It refuses while a video is queued or processing, because the pipeline
+  would write files back after the delete.
 
 ### Network architecture
 
@@ -267,10 +278,20 @@ per GB.
 - **Uploads pass through the API hosts.** That is network work, not the CPU
   work the problem statement is about. A very slow upload can hit the
   CloudFront or ALB timeout, and scale-in can cut off an upload in progress.
-- **One NAT Gateway in AZ A.** If AZ A fails, instances in AZ B cannot pull
-  images. Accepted for cost.
-- **Max video:** 5 GiB per upload. whisper.cpp on CPU takes roughly as long
-  as the video or longer, so a long video takes a long time to be `ready`.
+- **No NAT Gateway.** The API instance sits in a public subnet with a
+  public IP and a security group that accepts only the ALB. Accepted for
+  cost while the project is a demo.
+- **Max video:** 5 GiB per upload, and about 4.5 GiB in practice: the split
+  Lambda keeps the upload and its chunks in its 10 GB `/tmp`.
+- **Chunk edges:** whisper hears each 30-second chunk on its own, so a word
+  cut at an edge can come out wrong.
+- **Labels:** Rekognition reads only MP4 and MOV (H.264). Other formats
+  (for example WebM) get an empty label list; the rest of the pipeline runs.
+- **Search scale:** search reads every ready transcript per query. Fine for
+  tens of videos; for hundreds, move to Postgres full-text search filled
+  when the pipeline marks a video ready.
+- **Speech model:** whisper.cpp `base` is fast but weak on strong accents
+  and Hindi; a larger model would cost more Lambda time per chunk.
 - **Bedrock on the Free plan:** Claude models are sold through AWS
   Marketplace and fail without a payment method, so the summary uses
   Amazon Nova Lite (`apac.amazon.nova-lite-v1:0`).
@@ -279,13 +300,16 @@ per GB.
   `processed/`, so expiry only blocks re-processing an old video.
 - **Cost:** EC2, the NAT Gateway, the ALB and Aurora bill by the hour even
   when idle. Tear the stack down after demos.
-- **Region:** `ap-south-1`. Rekognition Video works there (checked); the
-  Bedrock model still has to be checked.
+- **Region:** `ap-south-1`. Rekognition Video and Nova Lite work there
+  (checked).
 
 ### Later
 
-- Search: Postgres full-text search over transcript, summary and tags.
-- Showing Rekognition labels and moderation flags in the UI.
+- Postgres full-text search over transcripts, summaries and tags, when
+  libraries outgrow file scanning.
+- Labels for non-MP4 uploads: remux the 480p chunks into an MP4 for
+  Rekognition.
+- Moderation flags in the UI.
 - An Aurora reader in AZ B, customer-managed KMS keys, Container Insights.
 
 ### AWS services in scope
@@ -402,8 +426,14 @@ To do, in build order:
       password login removed; tested locally against the real pool
 - [ ] CloudFront in front of the ALB (written, behind `cloudfront_enabled`;
       waiting for AWS to verify the account for CloudFront)
-- [ ] Terraform: WAF, alarms, CloudTrail;
-      playback cookie endpoint
+- [x] Operations: AWS Budget on gross usage (credits excluded, $25 a month,
+      alerts at 80% actual and 100% forecast), multi-Region CloudTrail into
+      its own bucket (30-day expiry), CloudWatch alarms (pipeline failed,
+      worker Lambda errors and throttles, API 5xx), all to the SNS topic
+- [x] App: Aurora glass redesign (Motion), live pipeline tracker, delete
+      (S3 and Aurora), transcript panel with click to seek, search across
+      transcripts that opens the video at the moment
+- [ ] WAF on CloudFront (after CloudFront)
 
 ## How this is being built
 
@@ -441,7 +471,8 @@ infra/
 
 ## Running locally
 
-Requires Go 1.23+, Node 20+, and Docker (for Postgres).
+Requires Go 1.26+, Node 20+, Docker (for Postgres), and the base
+Terraform stack applied once (for the Cognito user pool).
 
 ```bash
 # Postgres
@@ -451,17 +482,31 @@ docker run -d --name videointell-pg -p 5432:5432 \
 
 # Backend
 cd backend
+COGNITO_USER_POOL_ID="$(terraform -chdir=../infra output -raw cognito_user_pool_id)" \
+COGNITO_CLIENT_ID="$(terraform -chdir=../infra output -raw cognito_client_id)" \
 go run ./cmd/server
 
 # Frontend
 cd frontend
 npm install
+VITE_COGNITO_DOMAIN="$(terraform -chdir=../infra output -raw cognito_domain)" \
+VITE_COGNITO_CLIENT_ID="$(terraform -chdir=../infra output -raw cognito_client_id)" \
 npm run dev
 ```
 
-Open `http://localhost:5173`, register an account, and upload a video. It is
-saved under `backend/data/`. On AWS the same code writes to `/mnt/videos`,
-the Mountpoint for S3 folder, by setting `LOCAL_DATA_DIR`.
+Open `http://localhost:5173` and sign up on the Cognito page. Uploads are
+saved under `backend/data/`, which the pipeline never sees.
+
+**Hybrid mode (local app, real pipeline):** mount the bucket with
+Mountpoint for S3 and point the API at it and at Aurora. Uploads then land
+in S3 and the Lambda pipeline processes them:
+
+```bash
+mount-s3 <bucket> ~/mnt/videos --region ap-south-1 --allow-delete
+cd backend && eval "$(aws configure export-credentials --format env)" && \
+  DB_IAM_HOST=<cluster endpoint> LOCAL_DATA_DIR=$HOME/mnt/videos REQUIRE_MOUNT=true \
+  COGNITO_USER_POOL_ID=... COGNITO_CLIENT_ID=... go run ./cmd/server
+```
 
 ## Environment variables
 
@@ -479,6 +524,10 @@ Every variable has a local-dev default.
 | `COGNITO_CLIENT_ID` | _(required)_ | `terraform -chdir=infra output -raw cognito_client_id` |
 | `LOCAL_DATA_DIR` | `./data` | Video folder; `/mnt/videos` (Mountpoint for S3) on AWS |
 | `REQUIRE_MOUNT` | _(empty)_ | Set to `true` on AWS: the API refuses to start if `LOCAL_DATA_DIR` is not a mount point, so uploads never land on the instance disk by mistake |
+| `DB_IAM_HOST` | _(empty)_ | Aurora endpoint; when set, the API connects with an IAM token it signs itself instead of `DATABASE_URL` |
+| `DB_USER` | `api` | Database user for IAM sign-in |
+| `DB_NAME` | `videointell` | Database name for IAM sign-in |
+| `AWS_REGION` | `ap-south-1` | Region for the IAM token and the Cognito issuer |
 
 ### Worker
 
@@ -507,4 +556,6 @@ Put these in `frontend/.env` (git-ignored; Vite loads it automatically).
 
 | Variable | Default | Description |
 |---|---|---|
-| `VITE_API_BASE_URL` | `http://localhost:8080` | Backend API base URL |
+| `VITE_API_BASE_URL` | `http://localhost:8080` | Backend API base URL; empty behind CloudFront (same origin) |
+| `VITE_COGNITO_DOMAIN` | _(required)_ | `terraform -chdir=infra output -raw cognito_domain` |
+| `VITE_COGNITO_CLIENT_ID` | _(required)_ | `terraform -chdir=infra output -raw cognito_client_id` |

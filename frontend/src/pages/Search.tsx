@@ -12,7 +12,7 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
     <>
       {text.split(pattern).map((part, i) =>
         i % 2 ? (
-          <mark key={i} className="rounded bg-violet-400/30 px-0.5 text-white">
+          <mark key={i} className="rounded bg-amber-400/30 px-0.5 text-white">
             {part}
           </mark>
         ) : (
@@ -27,13 +27,19 @@ export default function Search() {
   const [params] = useSearchParams()
   const q = params.get('q') ?? ''
   const [hits, setHits] = useState<SearchHit[] | null>(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let stopped = false
     setHits(null)
-    search(q).then((r) => {
-      if (!stopped) setHits(r)
-    })
+    setFailed(false)
+    search(q)
+      .then((r) => {
+        if (!stopped) setHits(r)
+      })
+      .catch(() => {
+        if (!stopped) setFailed(true)
+      })
     return () => {
       stopped = true
     }
@@ -43,17 +49,22 @@ export default function Search() {
 
   return (
     <Shell>
-      <h1 className="font-display mb-6 text-3xl font-bold tracking-tight text-white">
+      <h1 className="font-display text-3xl font-bold tracking-tight text-white">
         {q ? <>&ldquo;{q}&rdquo;</> : 'Search'}
       </h1>
-      {hits === null ? (
+      <p className="mb-6 mt-1 text-sm text-zinc-400">
+        Moments where this was said, across all your videos{hits && hits.length > 0 ? ` (${hits.length})` : ''}. Click one to play from there.
+      </p>
+      {failed ? (
+        <div className="glass rounded-3xl px-6 py-16 text-center text-red-300">Search failed. Check that the API is running, then try again.</div>
+      ) : hits === null ? (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
             <div key={i} className="shimmer h-24 rounded-3xl" />
           ))}
         </div>
       ) : hits.length === 0 ? (
-        <div className="glass rounded-3xl px-6 py-16 text-center text-slate-400">No moments match.</div>
+        <div className="glass rounded-3xl px-6 py-16 text-center text-slate-400">Nobody says that in any of your videos. Try fewer or different words.</div>
       ) : (
         <motion.ul className="space-y-3" initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.04 } } }}>
           {hits.map((h) => (

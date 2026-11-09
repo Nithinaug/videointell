@@ -13,12 +13,12 @@ export default function VideoCard({ video, big = false, onDeleted }: { video: Vi
     e.stopPropagation()
     if (!confirm(`Delete "${video.title}"? This removes the video, its results and its record for good.`)) return
     setDeleting(true)
+    const done = deleteVideo(video.id)
+    onDeleted()
     try {
-      await deleteVideo(video.id)
-      onDeleted()
+      await done
     } catch {
-      setDeleting(false)
-      alert('Could not delete the video. Try again.')
+      alert(`Could not delete "${video.title}". It will show up again; try once more.`)
     }
   }
   const mx = useMotionValue(0.5)
@@ -27,7 +27,7 @@ export default function VideoCard({ video, big = false, onDeleted }: { video: Vi
   const rotateY = useSpring(useTransform(mx, [0, 1], [-8, 8]), { stiffness: 200, damping: 20 })
   const glowX = useTransform(mx, (v) => `${v * 100}%`)
   const glowY = useTransform(my, (v) => `${v * 100}%`)
-  const glow = useMotionTemplate`radial-gradient(420px circle at ${glowX} ${glowY}, rgba(139,92,246,0.28), transparent 45%)`
+  const glow = useMotionTemplate`radial-gradient(420px circle at ${glowX} ${glowY}, rgba(245,165,36,0.28), transparent 45%)`
 
   function onMove(e: MouseEvent<HTMLAnchorElement>) {
     const r = e.currentTarget.getBoundingClientRect()
@@ -55,7 +55,7 @@ export default function VideoCard({ video, big = false, onDeleted }: { video: Vi
           {thumb ? (
             <img src={thumb} alt="" crossOrigin="anonymous" onError={() => setThumbOk(false)} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
           ) : (
-            <div className="h-full w-full bg-[radial-gradient(circle_at_30%_20%,rgba(139,92,246,0.35),transparent_55%),radial-gradient(circle_at_80%_80%,rgba(14,165,233,0.3),transparent_50%)]" />
+            <div className="h-full w-full bg-[radial-gradient(circle_at_30%_20%,rgba(245,165,36,0.35),transparent_55%),radial-gradient(circle_at_80%_80%,rgba(217,119,6,0.3),transparent_50%)]" />
           )}
           <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 to-transparent" />
           <div className="absolute left-3 top-3">

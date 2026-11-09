@@ -39,7 +39,6 @@ export interface Progress {
   chunks: number
   chunks_done: number
   assembled: boolean
-  labels: boolean
   summary: boolean
 }
 
@@ -63,7 +62,6 @@ export interface Segment {
 
 export interface Results {
   summary: Summary
-  labels: string[]
   transcript: Segment[]
 }
 
@@ -75,9 +73,11 @@ export interface SearchHit {
   results_url?: string
 }
 
+const deleting = new Set<string>()
+
 export async function listVideos() {
   const { data } = await api.get<{ videos: Video[] }>('/api/videos')
-  return data.videos.map((v) => (v.results_url ? { ...v, results_url: API_BASE_URL + v.results_url } : v))
+  return data.videos.filter((v) => !deleting.has(v.id)).map((v) => (v.results_url ? { ...v, results_url: API_BASE_URL + v.results_url } : v))
 }
 
 export async function createVideo(title: string, filename: string, contentType: string) {
@@ -102,7 +102,12 @@ export async function search(q: string) {
 }
 
 export async function deleteVideo(videoId: string) {
-  await api.delete(`/api/videos/${videoId}`)
+  deleting.add(videoId)
+  try {
+    await api.delete(`/api/videos/${videoId}`)
+  } finally {
+    deleting.delete(videoId)
+  }
 }
 
 export function canDelete(status: Video['status']) {
@@ -123,15 +128,12 @@ export async function getVideoDetail(videoId: string) {
 
 export async function getResults(resultsUrl: string): Promise<Results | null> {
   try {
-    const [summary, labels] = await Promise.all([
-      axios.get<Summary>(resultsUrl + 'summary.json'),
-      axios.get<string[]>(resultsUrl + 'labels.json'),
-    ])
+    const summary = await axios.get<Summary>(resultsUrl + 'summary.json')
     const transcript = await axios
       .get<{ segments?: Segment[] }>(resultsUrl + 'transcript.json')
       .then((r) => r.data.segments ?? [])
       .catch(() => [])
-    return { summary: summary.data, labels: labels.data, transcript }
+    return { summary: summary.data, transcript }
   } catch {
     return null
   }

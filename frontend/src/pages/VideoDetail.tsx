@@ -18,18 +18,6 @@ function Card({ title, children, className = '' }: { title: string; children: Re
   )
 }
 
-function Chips({ items, tone }: { items: string[]; tone: 'sky' | 'slate' }) {
-  if (items.length === 0) return <p className="text-sm text-slate-500">None found.</p>
-  const color = tone === 'sky' ? 'bg-sky-400/10 text-sky-200 ring-sky-400/20' : 'bg-white/5 text-slate-300 ring-white/10'
-  return (
-    <ul className="flex flex-wrap gap-2">
-      {items.map((item) => (
-        <li key={item} className={`px-3 py-1 rounded-full text-xs ring-1 ${color}`}>{item}</li>
-      ))}
-    </ul>
-  )
-}
-
 function ChapterStrip({
   base,
   chapters,
@@ -64,7 +52,7 @@ function ChapterStrip({
             aria-current={i === active}
             onClick={() => onSeek(starts[i])}
             className={`group snap-start shrink-0 w-44 text-left rounded-xl overflow-hidden ring-1 transition duration-200 ${
-              i === active ? 'ring-sky-400/70 bg-sky-400/10' : 'ring-white/10 bg-white/[0.03] hover:ring-white/30'
+              i === active ? 'ring-amber-400/70 bg-amber-400/10' : 'ring-white/10 bg-white/[0.03] hover:ring-white/30'
             }`}
           >
             <div className="relative aspect-video bg-black">
@@ -80,10 +68,10 @@ function ChapterStrip({
                 {c.start}
               </span>
               <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/10">
-                <div className="h-full bg-sky-400 transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
+                <div className="h-full bg-amber-400 transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
               </div>
             </div>
-            <p className={`px-3 py-2 text-sm truncate ${i === active ? 'text-sky-100' : 'text-slate-300'}`}>{c.title}</p>
+            <p className={`px-3 py-2 text-sm truncate ${i === active ? 'text-amber-100' : 'text-slate-300'}`}>{c.title}</p>
           </button>
         )
       })}
@@ -97,10 +85,10 @@ function Step({ label, state, children }: { label: string; state: 'todo' | 'acti
       <div className="flex items-center gap-2">
         <span
           className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold ring-1 transition-colors duration-300 ${
-            state === 'done' ? 'bg-emerald-400/20 text-emerald-200 ring-emerald-400/40' : state === 'active' ? 'bg-violet-400/20 text-violet-100 ring-violet-400/50' : 'bg-white/5 text-slate-500 ring-white/10'
+            state === 'done' ? 'bg-emerald-400/20 text-emerald-200 ring-emerald-400/40' : state === 'active' ? 'bg-amber-400/20 text-amber-100 ring-amber-400/50' : 'bg-white/5 text-slate-500 ring-white/10'
           }`}
         >
-          {state === 'done' ? '\u2713' : state === 'active' ? <span className="pulse-dot h-2 w-2 rounded-full bg-violet-300" /> : ''}
+          {state === 'done' ? '\u2713' : state === 'active' ? <span className="pulse-dot h-2 w-2 rounded-full bg-amber-300" /> : ''}
         </span>
         <span className={`truncate text-sm ${state === 'todo' ? 'text-slate-500' : 'text-slate-200'}`}>{label}</span>
       </div>
@@ -146,13 +134,12 @@ function Tracker({ videoId }: { videoId: string }) {
         <Step label={p?.chunks ? `Chunks ${p.chunks_done}/${p.chunks}` : 'Chunks'} state={state(chunksDone, !!p?.split && !chunksDone)}>
           <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
             <motion.div
-              className="h-full rounded-full bg-gradient-to-r from-violet-500 to-cyan-400"
+              className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-400"
               animate={{ width: `${p?.chunks ? (p.chunks_done / p.chunks) * 100 : 0}%` }}
               transition={{ type: 'spring', stiffness: 90, damping: 20 }}
             />
           </div>
         </Step>
-        <Step label="Labels" state={state(!!p?.labels, claimed && !p?.labels)} />
         <Step label="Stitch" state={state(!!p?.assembled, chunksDone && !p?.assembled)} />
         <Step label="Summary" state={state(!!p?.summary, !!p?.assembled && !p?.summary)} />
       </ol>
@@ -216,7 +203,7 @@ function Transcript({ segments, time, onSeek }: { segments: Segment[]; time: num
             aria-current={i === active}
             onClick={() => onSeek(s.from_ms / 1000)}
             className={`flex w-full gap-3 rounded-xl px-2 py-1.5 text-left text-sm transition-colors duration-200 ${
-              i === active ? 'bg-violet-400/15 text-white' : 'text-slate-300 hover:bg-white/5'
+              i === active ? 'bg-amber-400/15 text-white' : 'text-slate-300 hover:bg-white/5'
             }`}
           >
             <span className="w-12 shrink-0 pt-0.5 font-mono text-xs text-slate-500">{clock(s.from_ms / 1000)}</span>
@@ -281,7 +268,7 @@ function Watch({ detail, results, startAt }: { detail: VideoDetailT; results: Re
               e.currentTarget.play().catch(() => {})
             }
           }}
-          className="relative w-full aspect-video max-h-[62vh] object-contain rounded-3xl bg-black ring-1 ring-white/15 shadow-[0_30px_80px_-20px_rgba(139,92,246,0.45)]"
+          className="relative w-full aspect-video max-h-[62vh] object-contain rounded-3xl bg-black ring-1 ring-white/15 shadow-[0_30px_80px_-20px_rgba(245,165,36,0.45)]"
         >
           {base && <track kind="captions" srcLang="en" label="English" src={base + 'transcript.vtt'} />}
         </video>
@@ -294,21 +281,11 @@ function Watch({ detail, results, startAt }: { detail: VideoDetailT; results: Re
           {base && results.summary.chapters.length > 0 && (
             <ChapterStrip base={base} chapters={results.summary.chapters} time={time} duration={duration} onSeek={seek} />
           )}
-          <div className="fade-in grid gap-4 md:grid-cols-[2fr_1fr]">
-            <div className="space-y-4">
-              <Card title="Summary">
-                <p className="text-slate-200 leading-relaxed">{results.summary.summary || 'No speech found in this video.'}</p>
-              </Card>
-              <Transcript segments={results.transcript} time={time} onSeek={seek} />
-            </div>
-            <div className="space-y-4">
-              <Card title="Tags">
-                <Chips items={results.summary.tags} tone="sky" />
-              </Card>
-              <Card title="Seen in the video">
-                <Chips items={results.labels} tone="slate" />
-              </Card>
-            </div>
+          <div className="fade-in space-y-4">
+            <Card title="Summary">
+              <p className="text-slate-200 leading-relaxed">{results.summary.summary || 'No speech found in this video.'}</p>
+            </Card>
+            <Transcript segments={results.transcript} time={time} onSeek={seek} />
           </div>
         </>
       )}
@@ -357,13 +334,8 @@ export default function VideoDetail() {
   async function onDelete() {
     if (!confirm(`Delete "${video.title}"? This removes the video, its results and its record for good.`)) return
     setDeleting(true)
-    try {
-      await deleteVideo(video.id)
-      navigate('/', { replace: true })
-    } catch {
-      setDeleting(false)
-      alert('Could not delete the video. Try again.')
-    }
+    deleteVideo(video.id).catch(() => alert(`Could not delete "${video.title}". It will show up again; try once more.`))
+    navigate('/', { replace: true })
   }
 
   return (

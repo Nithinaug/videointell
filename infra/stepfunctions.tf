@@ -17,9 +17,6 @@ locals {
     "Bedrock.ThrottlingException",
     "Bedrock.ServiceUnavailableException",
     "Bedrock.ModelNotReadyException",
-    "Rekognition.LimitExceededException",
-    "Rekognition.ProvisionedThroughputExceededException",
-    "Rekognition.ThrottlingException",
     "S3.SlowDownException",
     "RdsData.DatabaseResumingException",
   ]
@@ -139,67 +136,6 @@ locals {
               }
             }
           },
-          {
-            StartAt = "StartLabelDetection"
-            States = {
-              StartLabelDetection = {
-                Type     = "Task"
-                Resource = "arn:aws:states:::aws-sdk:rekognition:startLabelDetection"
-                Arguments = {
-                  Video         = { S3Object = { Bucket = "{% $bucket %}", Name = "{% $videoKey %}" } }
-                  MinConfidence = 80
-                }
-                Assign = { labelJob = "{% $states.result.JobId %}" }
-                Retry  = local.retry_throttling
-                Next   = "WaitForLabels"
-              }
-
-              WaitForLabels = {
-                Type    = "Wait"
-                Seconds = 20
-                Next    = "GetLabels"
-              }
-
-              GetLabels = {
-                Type      = "Task"
-                Resource  = "arn:aws:states:::aws-sdk:rekognition:getLabelDetection"
-                Arguments = { JobId = "{% $labelJob %}", MaxResults = 200, SortBy = "NAME" }
-                Output = {
-                  status = "{% $states.result.JobStatus %}"
-                  labels = "{% $exists($states.result.Labels) ? $distinct($states.result.Labels.Label.Name[]) : [] %}"
-                }
-                Retry = local.retry_throttling
-                Next  = "LabelsDone"
-              }
-
-              LabelsDone = {
-                Type = "Choice"
-                Choices = [
-                  { Condition = "{% $states.input.status = 'SUCCEEDED' %}", Next = "SaveLabels" },
-                  { Condition = "{% $states.input.status = 'FAILED' %}", Next = "LabelsFailed" },
-                ]
-                Default = "WaitForLabels"
-              }
-
-              LabelsFailed = {
-                Type  = "Fail"
-                Error = "Rekognition.JobFailed"
-              }
-
-              SaveLabels = {
-                Type     = "Task"
-                Resource = "arn:aws:states:::aws-sdk:s3:putObject"
-                Arguments = {
-                  Bucket      = "{% $bucket %}"
-                  Key         = "{% $out & 'labels.json' %}"
-                  Body        = "{% $states.input.labels %}"
-                  ContentType = "application/json"
-                }
-                Retry = local.retry_throttling
-                End   = true
-              }
-            }
-          },
         ]
         Output = "{% {} %}"
         Catch  = local.catch_all
@@ -315,11 +251,6 @@ resource "aws_iam_role" "pipeline" {
 }
 
 data "aws_iam_policy_document" "pipeline" {
-  statement {
-    actions   = ["rekognition:StartLabelDetection", "rekognition:GetLabelDetection"]
-    resources = ["*"]
-  }
-
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
     resources = ["${aws_s3_bucket.videos.arn}/processed/*"]

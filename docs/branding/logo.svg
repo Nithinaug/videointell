@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="64" viewBox="0 0 240 64">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="8" width="48" height="48" rx="14" fill="url(#g)"/>
+  <path d="M22 21v22l18-11z" fill="#ffffff"/>
+  <text x="66" y="42" font-family="Space Grotesk, DM Sans, Arial, sans-serif" font-size="28" font-weight="700" fill="#ffffff">videointell</text>
+</svg>

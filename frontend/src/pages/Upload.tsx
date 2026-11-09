@@ -24,8 +24,8 @@ function Ring({ value }: { value: number }) {
       />
       <defs>
         <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#8b5cf6" />
-          <stop offset="100%" stopColor="#22d3ee" />
+          <stop offset="0%" stopColor="#f5a524" />
+          <stop offset="100%" stopColor="#d97706" />
         </linearGradient>
       </defs>
     </svg>
@@ -100,7 +100,7 @@ export default function Upload() {
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
             className={`relative grid w-full min-h-56 place-items-center overflow-hidden rounded-2xl border-2 border-dashed p-6 text-center transition-colors ${
-              dragging ? 'border-sky-400 bg-sky-400/10' : 'border-white/15 hover:border-white/30 hover:bg-white/[0.03]'
+              dragging ? 'border-amber-400 bg-amber-400/10' : 'border-white/15 hover:border-white/30 hover:bg-white/[0.03]'
             }`}
           >
             <input ref={input} type="file" accept="video/*" hidden onChange={(e) => pick(e.target.files?.[0])} />
@@ -126,7 +126,7 @@ export default function Upload() {
                 </motion.div>
               ) : (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-2">
-                  <motion.span animate={dragging ? { y: -6, scale: 1.1 } : { y: 0, scale: 1 }} className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-violet-500/30 to-sky-400/30 text-2xl text-white ring-1 ring-white/15">
+                  <motion.span animate={dragging ? { y: -6, scale: 1.1 } : { y: 0, scale: 1 }} className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-amber-500/30 to-amber-400/30 text-2xl text-white ring-1 ring-white/15">
                     &#8593;
                   </motion.span>
                   <span className="font-medium text-white">{dragging ? 'Drop it' : 'Drag a video here'}</span>
@@ -144,7 +144,7 @@ export default function Upload() {
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Team meeting"
               disabled={busy}
-              className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition-colors placeholder:text-slate-500 focus:border-sky-400/60"
+              className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition-colors placeholder:text-slate-500 focus:border-amber-400/60"
             />
           </label>
 
