@@ -6,14 +6,13 @@ import StatusBadge from '../components/StatusBadge'
 
 const POLL_MS = 10_000
 const THUMB_EVERY_S = 10
-const MAX_THUMBS = 10
 
 function toSeconds(hms: string) {
   return hms.split(':').reduce((total, part) => total * 60 + Number(part), 0)
 }
 
 function thumbFor(base: string, seconds: number) {
-  const n = Math.min(Math.floor(seconds / THUMB_EVERY_S) + 1, MAX_THUMBS)
+  const n = Math.floor(seconds / THUMB_EVERY_S) + 1
   return `${base}thumbs/thumb_${String(n).padStart(2, '0')}.jpg`
 }
 

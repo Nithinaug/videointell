@@ -20,12 +20,10 @@ RUN sh ./models/download-ggml-model.sh ${WHISPER_MODEL} \
 
 FROM debian:bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg libgomp1 \
- && rm -rf /var/lib/apt/lists/* \
- && useradd --uid 65532 --no-create-home --shell /usr/sbin/nologin worker
+ && apt-get install -y --no-install-recommends ffmpeg libgomp1 ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 COPY --from=whisper /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper /model.bin /models/whisper.bin
 COPY --from=build /out/worker /usr/local/bin/worker
-ENV WHISPER_MODEL=/models/whisper.bin LOCAL_DATA_DIR=/mnt/videos
-USER 65532
-ENTRYPOINT ["worker"]
+ENV WHISPER_MODEL=/models/whisper.bin
+ENTRYPOINT ["/usr/local/bin/worker"]

@@ -78,6 +78,19 @@ resource "aws_s3_bucket_lifecycle_configuration" "videos" {
       days_after_initiation = 1
     }
   }
+
+  rule {
+    id     = "expire-work-chunks"
+    status = "Enabled"
+
+    filter {
+      prefix = "work/"
+    }
+
+    expiration {
+      days = 1
+    }
+  }
 }
 
 resource "aws_s3_bucket_notification" "videos" {

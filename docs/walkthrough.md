@@ -22,7 +22,8 @@ way to check it works. Sections are added as each build step is finished.
 | Step 2: Bedrock summary | 11 | Done |
 | Step 3: results page | 12 | Done |
 | Step 4: Aurora and video status | 13 | Done |
-| Steps 5-8 | - | Not started |
+| Step 5: app on ECS, Lambda fan-out | 14 | Done |
+| Steps 6-8 | - | Not started |
 
 ## The big picture
 
@@ -801,3 +802,83 @@ aws rds-data execute-statement --region ap-south-1 --resource-arn <cluster arn> 
 ```
 
 Measured: `ready` with `{"prefix": "processed/u1/1-test.mp4/"}`.
+
+---
+
+## 14. App on ECS and Lambda fan-out (step 5)
+
+**What:** the API and the Nginx frontend run on ECS behind an ALB, in their
+own Terraform folder `infra/app/` so the hourly parts can be destroyed on
+their own. Processing moved from an EC2 worker to Lambda workers run in
+parallel by a Step Functions Distributed Map.
+
+**Why Lambda:** the EC2 worker needed about 3.5 minutes to start an
+instance for every video and handled one video per instance. Lambda starts
+in seconds, costs nothing when idle, and runs one function per 30-second
+chunk, so a long video finishes about as fast as a short one. Measured:
+58 s for the test clip, against about 220 s before.
+
+**How the pipeline runs now:**
+
+1. `Split` (Lambda): downloads the upload, `ffmpeg -c copy -f segment` cuts
+   it into 30 s chunks at keyframes (no re-encode) and saves them under
+   `work/` (deleted by an S3 lifecycle rule after one day).
+2. `Chunks` (Distributed Map, up to 1,000 at once, child workflows of type
+   STANDARD so a slow chunk is not cut at 5 minutes): one Lambda per chunk
+   makes the HLS segments, the thumbnails that fall in its time range and
+   the whisper transcript, shifted to the chunk's start.
+3. `Assemble` (Lambda): joins the per-chunk playlists with
+   `#EXT-X-DISCONTINUITY` between chunks, joins the transcripts, and writes
+   `transcript.vtt` and `bedrock-request.json`.
+4. In parallel with 1 to 3, Rekognition reads the original upload.
+
+**API to Aurora:** the API connects as the `api` database user. For each
+new connection it signs an IAM token itself (SigV4 with the Go standard
+library, checked against AWS's published example) using the ECS task
+role's credentials from the container credentials endpoint.
+
+**Cost:** the app stack bills by the hour (ALB about $0.023/h, `t3.small`
+about $0.022/h, 3 public IPv4 addresses $0.015/h; about $0.06/h in all,
+estimates). Lambda costs only while it runs (roughly 1 cent per minute of
+video at 10 GB, estimate).
+
+### Console
+
+- **Lambda** -> **Create function** -> **Container image**, the
+  `videointell-worker` image, x86_64; **Configuration** -> memory 10240 MB,
+  ephemeral storage 10240 MB, timeout 15 min, env `CHUNK_SECONDS=30`.
+- **Step Functions**: in Workflow Studio, a **Parallel** state with a
+  **Map** state set to **Distributed**, child execution type **Standard**,
+  max concurrency 1000.
+
+### Terraform
+
+- `infra/lambda.tf`: the worker function (pinned to the image digest), its
+  role (read `uploads/*` and `work/*`, write `work/*` and `processed/*`),
+  log group, and the ECR policy that lets Lambda pull the image.
+- `infra/stepfunctions.tf`: the `Process` Parallel state with the Map;
+  the role may start and stop its own child executions and invoke the
+  function.
+- `infra/app/`: ALB, target groups (`/api/*` to the API, the rest to
+  Nginx), API Auto Scaling group with Mountpoint, ECS services, the JWT
+  secret in SSM Parameter Store, and the task role allowed
+  `rds-db:connect` as `api`.
+
+```bash
+terraform -chdir=infra/app apply     # start of a session
+terraform -chdir=infra/app destroy   # end of a session
+```
+
+### Check it
+
+Upload a video in the app, or reset the test row to `uploaded` and write
+the `.done` marker (section 13), then:
+
+```bash
+aws stepfunctions list-executions --region ap-south-1 --state-machine-arn <pipeline arn> \
+  --max-results 1 --query "executions[0].[status,startDate,stopDate]" --output text
+```
+
+**Limits:** whisper hears each chunk on its own, so a word cut at a chunk
+edge can come out wrong. The split Lambda keeps the upload and its chunks
+in its 10 GB `/tmp`, so uploads above about 4.5 GB fail there.

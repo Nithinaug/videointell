@@ -1,9 +1,15 @@
+variable "max_chunk_workers" {
+  type    = number
+  default = 1000
+}
+
 variable "bedrock_profile" {
   type    = string
   default = "apac.amazon.nova-lite-v1:0"
 }
 
 locals {
+  pipeline_arn        = "arn:aws:states:${var.region}:${data.aws_caller_identity.current.account_id}:stateMachine:${local.name}-pipeline"
   bedrock_profile_arn = "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.bedrock_profile}"
   bedrock_model_id    = replace(var.bedrock_profile, "/^[a-z]+\\./", "")
 
@@ -23,6 +29,14 @@ locals {
     IntervalSeconds = 30
     BackoffRate     = 2
     MaxAttempts     = 6
+    JitterStrategy  = "FULL"
+  }]
+
+  retry_lambda = [{
+    ErrorEquals     = ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"]
+    IntervalSeconds = 5
+    BackoffRate     = 2
+    MaxAttempts     = 5
     JitterStrategy  = "FULL"
   }]
 
@@ -70,7 +84,7 @@ locals {
 
       Claimed = {
         Type    = "Choice"
-        Choices = [{ Condition = "{% $states.input %}", Next = "ProcessVideo" }]
+        Choices = [{ Condition = "{% $states.input %}", Next = "Process" }]
         Default = "AlreadyHandled"
       }
 
@@ -78,82 +92,118 @@ locals {
         Type = "Succeed"
       }
 
-      ProcessVideo = {
-        Type           = "Task"
-        Resource       = "arn:aws:states:::ecs:runTask.sync"
-        TimeoutSeconds = 10800
-        Arguments = {
-          Cluster        = aws_ecs_cluster.main.arn
-          TaskDefinition = aws_ecs_task_definition.worker.arn_without_revision
-          CapacityProviderStrategy = [{
-            CapacityProvider = aws_ecs_capacity_provider.worker.name
-            Weight           = 1
-          }]
-          Overrides = {
-            ContainerOverrides = [{
-              Name        = "worker"
-              Environment = [{ Name = "VIDEO_KEY", Value = "{% $videoKey %}" }]
-            }]
-          }
-        }
+      Process = {
+        Type = "Parallel"
+        Branches = [
+          {
+            StartAt = "Split"
+            States = {
+              Split = {
+                Type      = "Task"
+                Resource  = "arn:aws:states:::lambda:invoke"
+                Arguments = { FunctionName = aws_lambda_function.worker.arn, Payload = { op = "split", bucket = "{% $bucket %}", videoKey = "{% $videoKey %}" } }
+                Assign    = { plan = "{% $states.result.Payload %}" }
+                Output    = "{% $states.result.Payload.chunks %}"
+                Retry     = local.retry_lambda
+                Next      = "Chunks"
+              }
+
+              Chunks = {
+                Type           = "Map"
+                Items          = "{% $states.input %}"
+                MaxConcurrency = var.max_chunk_workers
+                ItemProcessor = {
+                  ProcessorConfig = { Mode = "DISTRIBUTED", ExecutionType = "STANDARD" }
+                  StartAt         = "Chunk"
+                  States = {
+                    Chunk = {
+                      Type      = "Task"
+                      Resource  = "arn:aws:states:::lambda:invoke"
+                      Arguments = { FunctionName = aws_lambda_function.worker.arn, Payload = "{% $states.input %}" }
+                      Output    = "{% $states.result.Payload %}"
+                      Retry     = local.retry_lambda
+                      End       = true
+                    }
+                  }
+                }
+                Next = "Assemble"
+              }
+
+              Assemble = {
+                Type      = "Task"
+                Resource  = "arn:aws:states:::lambda:invoke"
+                Arguments = { FunctionName = aws_lambda_function.worker.arn, Payload = "{% $plan %}" }
+                Output    = "{% {} %}"
+                Retry     = local.retry_lambda
+                End       = true
+              }
+            }
+          },
+          {
+            StartAt = "StartLabelDetection"
+            States = {
+              StartLabelDetection = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:rekognition:startLabelDetection"
+                Arguments = {
+                  Video         = { S3Object = { Bucket = "{% $bucket %}", Name = "{% $videoKey %}" } }
+                  MinConfidence = 80
+                }
+                Assign = { labelJob = "{% $states.result.JobId %}" }
+                Retry  = local.retry_throttling
+                Next   = "WaitForLabels"
+              }
+
+              WaitForLabels = {
+                Type    = "Wait"
+                Seconds = 20
+                Next    = "GetLabels"
+              }
+
+              GetLabels = {
+                Type      = "Task"
+                Resource  = "arn:aws:states:::aws-sdk:rekognition:getLabelDetection"
+                Arguments = { JobId = "{% $labelJob %}", MaxResults = 200, SortBy = "NAME" }
+                Output = {
+                  status = "{% $states.result.JobStatus %}"
+                  labels = "{% $exists($states.result.Labels) ? $distinct($states.result.Labels.Label.Name[]) : [] %}"
+                }
+                Retry = local.retry_throttling
+                Next  = "LabelsDone"
+              }
+
+              LabelsDone = {
+                Type = "Choice"
+                Choices = [
+                  { Condition = "{% $states.input.status = 'SUCCEEDED' %}", Next = "SaveLabels" },
+                  { Condition = "{% $states.input.status = 'FAILED' %}", Next = "LabelsFailed" },
+                ]
+                Default = "WaitForLabels"
+              }
+
+              LabelsFailed = {
+                Type  = "Fail"
+                Error = "Rekognition.JobFailed"
+              }
+
+              SaveLabels = {
+                Type     = "Task"
+                Resource = "arn:aws:states:::aws-sdk:s3:putObject"
+                Arguments = {
+                  Bucket      = "{% $bucket %}"
+                  Key         = "{% $out & 'labels.json' %}"
+                  Body        = "{% $states.input.labels %}"
+                  ContentType = "application/json"
+                }
+                Retry = local.retry_throttling
+                End   = true
+              }
+            }
+          },
+        ]
         Output = "{% {} %}"
         Catch  = local.catch_all
-        Next   = "StartLabelDetection"
-      }
-
-      StartLabelDetection = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::aws-sdk:rekognition:startLabelDetection"
-        Arguments = {
-          Video         = { S3Object = { Bucket = "{% $bucket %}", Name = "{% $out & 'video.mp4' %}" } }
-          MinConfidence = 80
-        }
-        Assign = { labelJob = "{% $states.result.JobId %}" }
-        Retry  = local.retry_throttling
-        Catch  = local.catch_all
-        Next   = "WaitForLabels"
-      }
-
-      WaitForLabels = {
-        Type    = "Wait"
-        Seconds = 20
-        Next    = "GetLabels"
-      }
-
-      GetLabels = {
-        Type      = "Task"
-        Resource  = "arn:aws:states:::aws-sdk:rekognition:getLabelDetection"
-        Arguments = { JobId = "{% $labelJob %}", MaxResults = 200, SortBy = "NAME" }
-        Output = {
-          status = "{% $states.result.JobStatus %}"
-          labels = "{% $exists($states.result.Labels) ? $distinct($states.result.Labels.Label.Name[]) : [] %}"
-        }
-        Retry = local.retry_throttling
-        Catch = local.catch_all
-        Next  = "LabelsDone"
-      }
-
-      LabelsDone = {
-        Type = "Choice"
-        Choices = [
-          { Condition = "{% $states.input.status = 'SUCCEEDED' %}", Next = "SaveLabels" },
-          { Condition = "{% $states.input.status = 'FAILED' %}", Next = "MarkFailed" },
-        ]
-        Default = "WaitForLabels"
-      }
-
-      SaveLabels = {
-        Type     = "Task"
-        Resource = "arn:aws:states:::aws-sdk:s3:putObject"
-        Arguments = {
-          Bucket      = "{% $bucket %}"
-          Key         = "{% $out & 'labels.json' %}"
-          Body        = "{% $states.input.labels %}"
-          ContentType = "application/json"
-        }
-        Retry = local.retry_throttling
-        Catch = local.catch_all
-        Next  = "Summarize"
+        Next   = "Summarize"
       }
 
       Summarize = {
@@ -276,23 +326,23 @@ data "aws_iam_policy_document" "pipeline" {
   }
 
   statement {
-    actions   = ["ecs:RunTask"]
-    resources = ["${aws_ecs_task_definition.worker.arn_without_revision}:*"]
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.videos.arn}/uploads/*"]
   }
 
   statement {
-    actions   = ["ecs:StopTask", "ecs:DescribeTasks"]
-    resources = ["*"]
+    actions   = ["states:StartExecution"]
+    resources = [local.pipeline_arn]
   }
 
   statement {
-    actions   = ["iam:PassRole"]
-    resources = [aws_iam_role.task_execution.arn]
+    actions   = ["states:DescribeExecution", "states:StopExecution"]
+    resources = ["arn:aws:states:${var.region}:${data.aws_caller_identity.current.account_id}:execution:${local.name}-pipeline/*"]
   }
 
   statement {
-    actions   = ["events:PutTargets", "events:PutRule", "events:DescribeRule"]
-    resources = ["arn:aws:events:${var.region}:${data.aws_caller_identity.current.account_id}:rule/StepFunctionsGetEventsForECSTaskRule"]
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.worker.arn, "${aws_lambda_function.worker.arn}:*"]
   }
 
   statement {

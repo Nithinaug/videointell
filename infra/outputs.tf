@@ -21,3 +21,43 @@ output "notifications_topic" {
 output "worker_repository" {
   value = aws_ecr_repository.worker.repository_url
 }
+
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+output "public_subnet_ids" {
+  value = aws_subnet.public[*].id
+}
+
+output "ecs_cluster" {
+  value = aws_ecs_cluster.main.name
+}
+
+output "instance_profile" {
+  value = aws_iam_instance_profile.worker.name
+}
+
+output "task_execution_role_arn" {
+  value = aws_iam_role.task_execution.arn
+}
+
+output "db_host" {
+  value = aws_rds_cluster.db.endpoint
+}
+
+output "db_resource_id" {
+  value = aws_rds_cluster.db.cluster_resource_id
+}
+
+output "region" {
+  value = var.region
+}
+
+output "api_repository" {
+  value = aws_ecr_repository.app["api"].repository_url
+}
+
+output "web_repository" {
+  value = aws_ecr_repository.app["web"].repository_url
+}

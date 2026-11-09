@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/jmoiron/sqlx"
 	"log"
 
 	"videointell/backend/internal/config"
@@ -14,7 +15,13 @@ import (
 func main() {
 	cfg := config.Load()
 
-	dbx, err := db.Connect(cfg.DatabaseURL)
+	var dbx *sqlx.DB
+	var err error
+	if cfg.DBIAMHost != "" {
+		dbx, err = db.ConnectIAM(cfg.DBIAMHost, cfg.AWSRegion, cfg.DBUser, cfg.DBName)
+	} else {
+		dbx, err = db.Connect(cfg.DatabaseURL)
+	}
 	if err != nil {
 		log.Fatalf("db connect: %v", err)
 	}

@@ -28,7 +28,7 @@ ClimaRoute. Two rules shape every choice below:
 
 A third constraint: the AWS account is on the **AWS Free plan**, which blocks
 MediaConvert and Transcribe (`SubscriptionRequiredException`). Transcoding
-and transcription therefore run in our own worker with ffmpeg and
+and transcription therefore run in our own Lambda workers with ffmpeg and
 whisper.cpp; Rekognition, Step Functions, SNS and EventBridge work on the
 plan.
 
@@ -42,17 +42,19 @@ folder. That is deliberate, not accidental complexity.
 > [Status](#status) list shows what exists today.
 
 - **ECS on EC2** runs the Go API and an Nginx server for the React build on
-  one Auto Scaling group, and the Go worker (ffmpeg + whisper.cpp) on a
-  second Auto Scaling group that scales to zero, so processing never takes
-  CPU from the API.
+  one Auto Scaling group.
+- **Lambda fan-out** does the heavy work: Step Functions splits each video
+  into 30-second chunks and a Distributed Map runs one Lambda per chunk
+  (ffmpeg + whisper.cpp, up to 1,000 at once), so a long video takes about
+  as long as a short one and processing never takes CPU from the API.
 - **CloudFront + WAF + Application Load Balancer** is the public entry point.
   The ALB signs users in with **Amazon Cognito**; the API checks the identity
   header the ALB adds.
 - **Mountpoint for Amazon S3** mounts the video bucket on each EC2 host, so
   the API saves uploads as plain files and they land in S3.
 - **EventBridge + Step Functions** turn each finished upload into a pipeline:
-  the Go worker (transcode to HLS, thumbnails, an H.264 MP4, transcript),
-  **Rekognition Video** (labels), **Bedrock** (summary, chapters, tags), then
+  **Lambda** workers (split, then HLS, thumbnails and transcript per chunk,
+  then stitch), **Rekognition Video** (labels, in parallel), **Bedrock** (summary, chapters, tags), then
   the result into **Aurora PostgreSQL** through the **RDS Data API**, and an
   **SNS** email.
 - **Aurora PostgreSQL Serverless v2** (express configuration, 0 to 4 ACU,
@@ -77,11 +79,11 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
 | API compute | Lambda (container images) | Go API container on EC2 (ECS, EC2 launch type) |
 | Public entry, throttling | API Gateway HTTP API | CloudFront + ALB + AWS WAF rate rule |
 | Auth | Cognito in the app | Cognito on the ALB listener |
-| Heavy work | Step Functions Distributed Map on Lambda | Step Functions driving a Go worker (ffmpeg, whisper.cpp) on EC2, Rekognition and Bedrock |
+| Heavy work | Step Functions Distributed Map on Lambda | The same: Distributed Map of Go Lambda workers (ffmpeg, whisper.cpp), plus Rekognition and Bedrock |
 | Long-running jobs | ECS Fargate | ECS on an EC2 Auto Scaling group |
 | Database | DynamoDB (TTL expiry) | Aurora PostgreSQL (provisioned) |
 | Frontend hosting | Amplify Hosting | Nginx container behind the ALB, cached by CloudFront |
-| Scaling | Per request, automatic | Target tracking on CPU, capacity provider adds instances |
+| Scaling | Per request, automatic | API: fixed Auto Scaling group; processing: Lambda concurrency |
 | Shared | S3, ECR, CloudWatch, Budgets | S3, ECR, CloudWatch (+ agent), Budgets |
 
 ### Request path
@@ -134,14 +136,16 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
                                               |
         0. set_video_status(key, [uploaded] -> processing); stop if false
                                               |
-        1. ECS RunTask (.sync), worker capacity provider: Go worker
-           - ffmpeg -> HLS ladder capped at source resolution, thumbnails,
-             H.264 MP4 (works on local scratch disk, then copies to the mount)
-           - whisper.cpp on the audio -> transcript JSON + VTT subtitles
-           - writes the Bedrock request body
-                                              |
-        2. Rekognition Video on the MP4: Start, then Wait/Get loop
-           -> labels.json in S3
+        1. Parallel:
+           a. Lambda split: ffmpeg copies the upload into ~30 s chunks
+              (cut at keyframes, no re-encode) under work/
+              Distributed Map, one Lambda per chunk (up to 1,000 at once):
+              HLS ladder capped at source resolution, thumbnails every 10 s,
+              whisper.cpp transcript shifted to the chunk's start
+              Lambda assemble: joins the playlists (DISCONTINUITY between
+              chunks) and transcripts, writes VTT and the Bedrock request
+           b. Rekognition Video on the upload: Start, then Wait/Get loop
+              -> labels.json in S3
                                               |
         3. Bedrock InvokeModel with S3 input and output -> summary, chapters, tags
                                               |
@@ -222,12 +226,10 @@ unknown key changes nothing.
    (Aurora express cluster sits outside the VPC, reached over TLS with IAM tokens)
 ```
 
-**Built so far (worker only):** two public subnets, an internet gateway and
-an S3 gateway endpoint, with no NAT Gateway. Worker instances get a public IP
-so they can pull images from ECR, and their security group allows no inbound
-traffic; a shell is still possible through Session Manager. This saves the
-NAT Gateway's hourly cost while only the worker exists. The private subnets
-and the NAT come with the API, ALB and Aurora.
+**Built so far:** two public subnets, an internet gateway and an S3 gateway
+endpoint, with no NAT Gateway. The API instance has a public IP (for ECR
+pulls and the Aurora gateway) and its security group only accepts the ALB.
+Lambda workers run outside the VPC.
 
 Traffic path: `Internet -> CloudFront -> ALB -> EC2 (ECS task) -> Aurora`.
 Instances have no public IPs and no SSH port; a shell comes through Session
@@ -238,23 +240,20 @@ per GB.
 ### Scaling
 
 - **API tasks**: ECS target tracking on average CPU at 60%.
-- **Worker tasks**: one task per video, started by Step Functions on the
-  worker capacity provider. Its Auto Scaling group scales from zero and its
-  maximum size is the real cap on parallel videos; extra tasks wait in
-  `PROVISIONING` until an instance has room.
-- **EC2 instances**: an ECS capacity provider with managed scaling grows and
-  shrinks the Auto Scaling group so the tasks have room.
-- **Managed calls**: Rekognition and Bedrock quotas are the limit. A
-  Standard state machine has no concurrency cap, so a burst of uploads
-  relies on the worker's maximum size and on Retry with backoff.
+- **Processing**: one Lambda per 30-second chunk, capped by the Map's
+  `MaxConcurrency` (1,000) and the account's Lambda concurrency (1,000 in
+  ap-south-1). Measured: the test clip took 58 s end to end, against about
+  220 s with the old EC2 worker starting cold.
+- **Managed calls**: Rekognition and Bedrock quotas are the limit; every
+  call retries with backoff.
 
 ### Alternatives considered
 
 | Choice | Picked | Rejected and why |
 |---|---|---|
 | Upload path | Through the API to Mountpoint | Presigned PUT straight to S3: needs request signing, which means the SDK or hand-written SigV4. CloudFront OAC PUT: needs per-part signing for big files, loses the no-overwrite guard, and splits local dev from AWS. |
-| Transcoding and transcription | Go worker with ffmpeg and whisper.cpp on its own Auto Scaling group | MediaConvert and Transcribe: blocked on the AWS Free plan. Running the worker on the API's instances: brings back the CPU starvation the problem statement is about. |
-| Transcript to Bedrock | The same Go worker writes the request body | Doing it inside the state machine: a long transcript passes the 256 KB state limit, and there is no code step without the SDK. |
+| Transcoding and transcription | Lambda fan-out (Distributed Map) with ffmpeg and whisper.cpp in a container image | MediaConvert and Transcribe: blocked on the AWS Free plan. EC2 worker on its own Auto Scaling group (built first): about 3.5 min cold start per video and one video per instance. Fargate: no Mountpoint, and no faster than a warm pool. |
+| Transcript to Bedrock | The assemble Lambda writes the request body | Doing it inside the state machine: a long transcript passes the 256 KB state limit. |
 | Status updates | One Postgres function, called by both API and pipeline | Pipeline writes a results file that the API reads back: a lagging dashboard and extra read code. |
 
 ### Known limits
@@ -287,11 +286,11 @@ per GB.
 
 | Category | Services |
 |---|---|
-| Compute | EC2, Launch Templates, Auto Scaling groups, ECS (EC2 launch type) with capacity providers, ECR, EBS gp3 |
+| Compute | Lambda (container image, 10 GB memory and /tmp), EC2, Launch Templates, Auto Scaling group, ECS (EC2 launch type), ECR, EBS gp3 |
 | Networking & delivery | VPC, Subnets, Route Tables, Internet Gateway, NAT Gateway, S3 gateway endpoint, Security Groups, Application Load Balancer, CloudFront, Route 53, ACM |
 | Storage & database | S3 (SSE-S3 encryption, lifecycle expiry on uploads/), Mountpoint for S3, Aurora PostgreSQL with the RDS Data API |
 | Orchestration | EventBridge, Step Functions (Standard) |
-| Media & AI | Rekognition Video, Amazon Bedrock (ffmpeg and whisper.cpp run in our worker) |
+| Media & AI | Rekognition Video, Amazon Bedrock (ffmpeg and whisper.cpp run in our Lambda workers) |
 | Notifications | SNS |
 | Security | Cognito, IAM roles (instance, task, state machine), Secrets Manager, Systems Manager Session Manager, AWS WAF, CloudTrail |
 | Monitoring & cost | CloudWatch Logs, metrics, alarms, CloudWatch agent, AWS Budgets |
@@ -308,9 +307,9 @@ instead of deleting it.
 **Terraform:**
 - Network: VPC, subnets, NAT, S3 endpoint, security groups, ALB,
   CloudFront, WAF, ACM, Route 53 records
-- Compute: launch templates (install Mountpoint), two Auto Scaling groups
-  (API, worker), ECS cluster, two capacity providers, task definitions,
-  services, scaling policies, ECR
+- Compute: worker Lambda (container image), API launch template (installs
+  Mountpoint) and Auto Scaling group, ECS cluster, task definitions,
+  services, ECR
 - Data: Aurora, S3 bucket (lifecycle, encryption, EventBridge notifications)
 - Pipeline: EventBridge rule, Step Functions state machine, SNS topic
 - Security and ops: Cognito user pool, IAM roles, Secrets Manager secrets,
@@ -329,7 +328,8 @@ checks such as reading a state machine run.
 | Save upload to S3 | Mountpoint for S3 on the EC2 host | Launch template user data |
 | Start the pipeline | S3 -> EventBridge rule on `uploads/*.done` | Terraform |
 | Rekognition, Bedrock, S3 writes of small results | Step Functions service integrations | State machine definition |
-| Run the worker task | Step Functions `ecs:runTask.sync` | State machine definition |
+| Run the workers | Step Functions `lambda:invoke` and a Distributed Map | State machine definition |
+| Worker S3 reads and writes | AWS SDK for Go v2, in the Lambda code only | `cmd/worker` |
 | Update video status | Step Functions -> RDS Data API -> `set_video_status` | State machine definition |
 | Send email | Step Functions -> SNS | State machine definition |
 | Read secrets | ECS injects Secrets Manager values as env vars | Task definition |
@@ -385,9 +385,12 @@ To do, in build order:
       Terraform), Data API with a `pipeline` user in Secrets Manager; the
       pipeline claims the video (`uploaded -> processing`, stops if not
       claimed), then sets `ready` with results or `failed`; run on AWS
-- [ ] Terraform: ALB, API Auto Scaling group (Mountpoint), API on ECS
-      signing IAM tokens for Aurora
-- [ ] Rekognition on the worker's MP4
+- [x] App stack (`infra/app/`, torn down on its own): ALB, API Auto Scaling
+      group (1 `t3.small`, Mountpoint), API and Nginx on ECS; the API signs
+      Aurora IAM tokens with stdlib SigV4; secrets in SSM Parameter Store
+- [x] Processing moved from the EC2 worker to Lambda fan-out: split into
+      30 s chunks, Distributed Map (up to 1,000 Lambdas), assemble;
+      Rekognition runs on the upload in parallel; 58 s for the test clip
 - [ ] Replace JWT auth with Cognito on the ALB and the identity middleware
 - [ ] Terraform: CloudFront, WAF, Route 53, Cognito, alarms, CloudTrail;
       playback cookie endpoint
@@ -395,11 +398,11 @@ To do, in build order:
 ## How this is being built
 
 - **Frontend**: React + TypeScript + Vite + Tailwind
-- **Backend**: Go (Gin) API, Postgres, no AWS SDK
-- **Worker task**: a `cmd/worker` Go program in its own image with ffmpeg
-  and whisper.cpp. Step Functions passes the video key as an env var; the
-  task reads the upload through the Mountpoint folder (bind-mounted from the
-  host), works on local scratch disk, then copies results to the mount
+- **Backend**: Go (Gin) API, Postgres, no AWS SDK (signs its Aurora IAM
+  token with stdlib SigV4)
+- **Workers**: one `cmd/worker` Lambda image with ffmpeg and whisper.cpp and
+  three operations (`split`, `chunk`, `assemble`). Lambda cannot use
+  Mountpoint, so this is the one place the AWS SDK is used (S3 get and put)
 - **Infrastructure**: AWS Console to learn each service, then Terraform
 
 ## Project layout
@@ -407,8 +410,8 @@ To do, in build order:
 ```
 backend/
   cmd/server/         API server entrypoint
-  cmd/worker/         pipeline worker entrypoint (one video per run)
-  internal/worker/    ffmpeg, whisper.cpp and Bedrock request steps
+  cmd/worker/         Lambda entrypoint (split, chunk, assemble; S3 via SDK)
+  internal/worker/    ffmpeg, whisper.cpp, playlist and transcript stitching
   internal/config/    env-based configuration
   internal/db/        Postgres connection + embedded SQL migrations
   internal/models/    shared data types
@@ -467,28 +470,24 @@ Every variable has a local-dev default.
 
 ### Worker
 
-Push the image to ECR (after `terraform apply`):
+Build and push the Lambda image, then `terraform apply` (the function is
+pinned to the image digest):
 
 ```bash
 REPO=$(terraform -chdir=infra output -raw worker_repository)
 aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${REPO%%/*}
-docker build -t $REPO:latest -f backend/Dockerfile.worker backend && docker push $REPO:latest
+docker build --provenance=false -t $REPO:latest -f backend/Dockerfile.worker backend && docker push $REPO:latest
 ```
 
 | Variable | Default | Description |
 |---|---|---|
-| `VIDEO_KEY` | _(required)_ | Upload key, for example `uploads/<user>/<file>`; set by Step Functions |
-| `WHISPER_MODEL` | _(required)_ | Path to the whisper.cpp model file, for example `ggml-base.bin` |
-| `WHISPER_BIN` | `whisper-cli` | whisper.cpp command |
-| `LOCAL_DATA_DIR` | `./data` | Same folder as the API; results go to `processed/<user>/<file>/` |
-| `SCRATCH_DIR` | system temp dir | Local disk for ffmpeg work before copying to the mount |
-| `REQUIRE_MOUNT` | _(empty)_ | `true` on AWS, same check as the API |
+| `WHISPER_MODEL` | `/models/whisper.bin` in the image | whisper.cpp model file |
+| `CHUNK_SECONDS` | `30` (Terraform `chunk_seconds`) | Chunk length for the fan-out |
 
-Run one video locally:
-
-```bash
-cd backend && VIDEO_KEY=uploads/<user>/<file> WHISPER_MODEL=/path/to/ggml-base.bin go run ./cmd/worker
-```
+Terraform variables: `max_chunk_workers` (Map concurrency, 1000),
+`worker_memory_mb` (10240; use 3008 if the account caps Lambda memory).
+`go test ./internal/worker/` runs split, chunk and assemble locally with a
+folder in place of S3.
 
 ### Frontend
 
