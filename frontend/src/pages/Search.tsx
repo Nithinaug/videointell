@@ -2,7 +2,9 @@ import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { search, type SearchResult } from '../api/client'
+import AskCard from '../components/AskCard'
 import Shell from '../components/Shell'
+import { snippet } from '../lib/snippet'
 import { clock, thumbFor } from '../lib/time'
 
 function Highlight({ text, terms }: { text: string; terms: string[] }) {
@@ -29,6 +31,7 @@ export default function Search() {
   const [data, setData] = useState<SearchResult | null>(null)
   const hits = data?.results ?? null
   const short = q.trim().replace(/\s+/g, '').length < 2
+  const asking = params.get('ask') === '1'
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
@@ -56,12 +59,14 @@ export default function Search() {
         {q ? <>&ldquo;{q}&rdquo;</> : 'Search'}
       </h1>
       <p className="mt-1 text-sm text-zinc-400">
-        Moments where this was said, across all your videos{hits && hits.length > 0 ? ` (${hits.length})` : ''}. Click one to play from there.
+        Moments where this was said or shown on screen, across all your videos{hits && hits.length > 0 ? ` (${hits.length})` : ''}. Click one to play from there.
         {data && ` ${data.searched} ${data.searched === 1 ? 'video' : 'videos'} searched.`}
       </p>
       <p className="mb-6 mt-1 text-sm text-zinc-500">
-        {data && data.skipped.length > 0 && `Still processing, not searched yet: ${data.skipped.join(', ')}.`}
+        {data && data.skipped.length > 0 && `Still processing, not searched yet: ${data.skipped.join(', ')}. `}
+        {!short && !asking && 'Press Enter to get an AI answer from all your videos.'}
       </p>
+      {!short && asking && <AskCard q={q.trim()} />}
       {short ? (
         <div className="glass rounded-3xl px-6 py-16 text-center text-slate-400">Keep typing...</div>
       ) : failed ? (
@@ -73,11 +78,11 @@ export default function Search() {
           ))}
         </div>
       ) : hits.length === 0 ? (
-        <div className="glass rounded-3xl px-6 py-16 text-center text-slate-400">Nobody says that in any of your videos. Try fewer or different words.</div>
+        <div className="glass rounded-3xl px-6 py-16 text-center text-slate-400">Nobody says or shows that in any of your videos. Try fewer or different words.</div>
       ) : (
         <motion.ul className="space-y-3" initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.04 } } }}>
           {hits.map((h) => (
-            <motion.li key={h.video_id + h.from_ms} variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}>
+            <motion.li key={h.kind + h.video_id + h.from_ms} variants={{ hidden: { opacity: 0, y: 8 }, show: { opacity: 1, y: 0 } }}>
               <Link
                 to={`/videos/${h.video_id}?t=${Math.floor(h.from_ms / 1000)}`}
                 className="glass group flex items-center gap-4 rounded-3xl p-2 pr-5 transition-colors hover:border-white/20"
@@ -95,9 +100,12 @@ export default function Search() {
                   <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-200">{clock(h.from_ms / 1000)}</span>
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-xs text-slate-400">{h.title}</p>
+                  <p className="truncate text-xs text-slate-400">
+                    {h.kind === 'screen' && <span className="mr-2 rounded bg-sky-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">On screen</span>}
+                    {h.title}
+                  </p>
                   <p className="mt-1 line-clamp-2 text-slate-200">
-                    <Highlight text={h.text} terms={terms} />
+                    <Highlight text={snippet(h.text, terms)} terms={terms} />
                   </p>
                 </div>
               </Link>

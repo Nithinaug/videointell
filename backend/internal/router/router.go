@@ -9,6 +9,7 @@ import (
 type Deps struct {
 	VideoHandler *handlers.VideoHandler
 	Files        *handlers.FilesHandler
+	Ask          *handlers.AskHandler
 	Auth         gin.HandlerFunc
 }
 
@@ -38,6 +39,11 @@ func New(d Deps) *gin.Engine {
 		search.Use(d.Auth)
 		{
 			search.GET("", d.VideoHandler.Search)
+		}
+		ask := api.Group("/ask")
+		ask.Use(d.Auth)
+		{
+			ask.POST("", d.Ask.Ask)
 		}
 	}
 

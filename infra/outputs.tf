@@ -77,3 +77,15 @@ output "cognito_client_id" {
 output "cognito_domain" {
   value = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.region}.amazoncognito.com"
 }
+
+output "bedrock_profile_id" {
+  value = var.bedrock_profile
+}
+
+output "bedrock_profile_arn" {
+  value = local.bedrock_profile_arn
+}
+
+output "bedrock_model_arn" {
+  value = local.bedrock_model_arn
+}

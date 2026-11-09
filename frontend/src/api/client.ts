@@ -63,6 +63,7 @@ export interface Segment {
 export interface Results {
   summary: Summary
   transcript: Segment[]
+  screen: Segment[]
 }
 
 export interface SearchHit {
@@ -70,6 +71,7 @@ export interface SearchHit {
   title: string
   from_ms: number
   text: string
+  kind: 'speech' | 'screen'
   results_url?: string
 }
 
@@ -100,6 +102,18 @@ export interface SearchResult {
   results: SearchHit[]
   searched: number
   skipped: string[]
+}
+
+export interface AskResult {
+  answer: string
+  sources: SearchHit[]
+  truncated: boolean
+  scope: 'video' | 'all'
+}
+
+export async function ask(q: string, videoId?: string): Promise<AskResult> {
+  const { data } = await api.post<AskResult>('/api/ask', { q, video_id: videoId ?? '' })
+  return data
 }
 
 export async function search(q: string): Promise<SearchResult> {
@@ -139,7 +153,11 @@ export async function getResults(resultsUrl: string): Promise<Results | null> {
       .get<{ segments?: Segment[] }>(resultsUrl + 'transcript.json')
       .then((r) => r.data.segments ?? [])
       .catch(() => [])
-    return { summary: summary.data, transcript }
+    const screen = await axios
+      .get<{ frames?: Segment[] }>(resultsUrl + 'screen.json')
+      .then((r) => r.data.frames ?? [])
+      .catch(() => [])
+    return { summary: summary.data, transcript, screen }
   } catch {
     return null
   }

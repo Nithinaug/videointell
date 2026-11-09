@@ -14,6 +14,7 @@ type Config struct {
 	JWTSecret    string
 	LocalDataDir string
 	RequireMount bool
+	BedrockModel string
 }
 
 func Load() Config {
@@ -29,6 +30,7 @@ func Load() Config {
 		JWTSecret:    getEnv("JWT_SECRET", "dev-secret-change-me"),
 		LocalDataDir: getEnv("LOCAL_DATA_DIR", "./data"),
 		RequireMount: getEnv("REQUIRE_MOUNT", "") == "true",
+		BedrockModel: getEnv("BEDROCK_MODEL_ID", "apac.amazon.nova-lite-v1:0"),
 	}
 }
 

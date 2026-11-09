@@ -543,6 +543,7 @@ docker build --provenance=false -t $REPO:latest -f backend/Dockerfile.worker bac
 | Variable | Default | Description |
 |---|---|---|
 | `WHISPER_MODEL` | `/models/whisper.bin` in the image | whisper.cpp model file |
+| `TESSERACT_BIN` | `/usr/bin/tesseract` in the image | Reads on-screen text every 3 s into `screen.json`; empty skips it |
 | `CHUNK_SECONDS` | `15` (Terraform `chunk_seconds`) | Chunk length for the fan-out |
 
 Terraform variables: `max_chunk_workers` (Map concurrency, 1000),

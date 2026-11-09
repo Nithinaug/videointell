@@ -20,10 +20,10 @@ RUN sh ./models/download-ggml-model.sh ${WHISPER_MODEL} \
 
 FROM debian:bookworm-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg libgomp1 ca-certificates \
+ && apt-get install -y --no-install-recommends ffmpeg libgomp1 ca-certificates tesseract-ocr tesseract-ocr-eng \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=whisper /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper /model.bin /models/whisper.bin
 COPY --from=build /out/worker /usr/local/bin/worker
-ENV WHISPER_MODEL=/models/whisper.bin
+ENV WHISPER_MODEL=/models/whisper.bin TESSERACT_BIN=/usr/bin/tesseract OMP_THREAD_LIMIT=1
 ENTRYPOINT ["/usr/local/bin/worker"]

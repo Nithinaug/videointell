@@ -112,11 +112,17 @@ export default function Upload() {
                 </motion.div>
               ) : busy ? (
                 <motion.div key="busy" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3">
-                  <div className="relative">
-                    <Ring value={progress ?? 0} />
-                    <span className="absolute inset-0 grid place-items-center text-xs font-semibold text-white">{Math.round((progress ?? 0) * 100)}%</span>
-                  </div>
-                  <span className="text-sm text-slate-300">Uploading {file?.name}</span>
+                  {(progress ?? 0) < 1 ? (
+                    <div className="relative">
+                      <Ring value={progress ?? 0} />
+                      <span className="absolute inset-0 grid place-items-center text-xs font-semibold text-white">{Math.round((progress ?? 0) * 100)}%</span>
+                    </div>
+                  ) : (
+                    <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.1, ease: 'linear' }}>
+                      <Ring value={0.25} />
+                    </motion.div>
+                  )}
+                  <span className="text-sm text-slate-300">{(progress ?? 0) < 1 ? `Uploading ${file?.name}` : 'Saving...'}</span>
                 </motion.div>
               ) : file ? (
                 <motion.div key="file" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center gap-1">

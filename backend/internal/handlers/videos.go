@@ -88,10 +88,24 @@ type searchHit struct {
 	Title   string `json:"title"`
 	FromMS  int64  `json:"from_ms"`
 	Text    string `json:"text"`
+	Kind    string `json:"kind"`
 	Results string `json:"results_url,omitempty"`
 }
 
 const maxSearchHits = 50
+
+func screenMatches(frames []worker.ScreenText, terms []string) []int {
+	var out []int
+	prev := false
+	for i, f := range frames {
+		hit := containsAll(f.Text, terms)
+		if hit && !prev {
+			out = append(out, i)
+		}
+		prev = hit
+	}
+	return out
+}
 
 func containsAll(text string, terms []string) bool {
 	text = strings.ToLower(text)
@@ -131,15 +145,22 @@ func (h *VideoHandler) Search(c *gin.Context) {
 		}
 		segments, err := h.loadTranscript(out)
 		if err != nil {
-			log.Printf("search: skip video %s: %v", v.ID, err)
-			continue
+			log.Printf("search: skip transcript of %s: %v", v.ID, err)
 		}
+		screen, err := h.loadScreen(out)
+		if err != nil {
+			log.Printf("search: skip screen text of %s: %v", v.ID, err)
+		}
+		results := h.Storage.DirURL(out)
 		for _, s := range segments {
-			if containsAll(s.Text, terms) {
-				hits = append(hits, searchHit{VideoID: v.ID, Title: v.Title, FromMS: s.FromMS, Text: s.Text, Results: h.Storage.DirURL(out)})
-				if len(hits) == maxSearchHits {
-					break
-				}
+			if len(hits) < maxSearchHits && containsAll(s.Text, terms) {
+				hits = append(hits, searchHit{VideoID: v.ID, Title: v.Title, FromMS: s.FromMS, Text: s.Text, Kind: "speech", Results: results})
+			}
+		}
+		for _, i := range screenMatches(screen, terms) {
+			if len(hits) < maxSearchHits {
+				s := screen[i]
+				hits = append(hits, searchHit{VideoID: v.ID, Title: v.Title, FromMS: s.FromMS, Text: s.Text, Kind: "screen", Results: results})
 			}
 		}
 	}

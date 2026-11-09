@@ -826,8 +826,11 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
     the scope: on a video page the box says "Search this video" and filters that
     transcript; everywhere else it searches all videos. With no match on a video
     page, a "Search all videos instead" link opens `/search?q=`. Clearing the box
-    on `/search` returns to the library. Ask (stage 2) follows the same rule: on a
-    video page it asks about that video, elsewhere about all videos.
+    on `/search` returns to the library. Ask (stage 2) shares the same box: typing
+    searches as you type, and Enter adds `ask=1`, which shows an answer card above
+    the matches. On a video page it asks about that video; elsewhere it asks about
+    all videos. A hint under the box says "Press Enter to get an AI answer". There
+    is no separate Ask button. The answer card scrolls into view when it arrives.
 
 These settle the implementation readiness report. Where an item above disagrees
 with this section, this section wins.

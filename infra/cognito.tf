@@ -43,9 +43,9 @@ resource "aws_cognito_user_pool_client" "web" {
 }
 
 resource "aws_cognito_managed_login_branding" "web" {
-  user_pool_id                = aws_cognito_user_pool.main.id
-  client_id                   = aws_cognito_user_pool_client.web.id
-  settings = jsonencode(jsondecode(file("${path.module}/branding/settings.json")))
+  user_pool_id = aws_cognito_user_pool.main.id
+  client_id    = aws_cognito_user_pool_client.web.id
+  settings     = jsonencode(jsondecode(file("${path.module}/branding/settings.json")))
 
   lifecycle {
     ignore_changes = [asset]

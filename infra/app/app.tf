@@ -208,6 +208,19 @@ resource "aws_iam_role_policy" "api_task_db" {
   })
 }
 
+resource "aws_iam_role_policy" "api_task_bedrock" {
+  name = "invoke-bedrock"
+  role = aws_iam_role.api_task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "bedrock:InvokeModel"
+      Resource = [local.base.bedrock_profile_arn, local.base.bedrock_model_arn]
+    }]
+  })
+}
+
 resource "aws_cloudwatch_log_group" "app" {
   for_each          = toset(["api", "web"])
   name              = "/ecs/${local.name}-${each.key}"
@@ -234,6 +247,7 @@ resource "aws_ecs_task_definition" "api" {
     portMappings = [{ containerPort = 8080, hostPort = 0 }]
     environment = [
       { name = "DB_IAM_HOST", value = local.base.db_host },
+      { name = "BEDROCK_MODEL_ID", value = local.base.bedrock_profile_id },
       { name = "DB_USER", value = "api" },
       { name = "DB_NAME", value = "videointell" },
       { name = "AWS_REGION", value = local.base.region },

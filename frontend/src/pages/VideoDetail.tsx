@@ -3,7 +3,9 @@ import { motion } from 'motion/react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Hls from 'hls.js'
 import { canDelete, deleteVideo, getProgress, getResults, getVideoDetail, type Progress, type Segment, type Results, type VideoDetail as VideoDetailT } from '../api/client'
+import AskCard from '../components/AskCard'
 import Shell from '../components/Shell'
+import { firstAppearances, snippet } from '../lib/snippet'
 import { clock, thumbFor, toSeconds } from '../lib/time'
 import StatusBadge from '../components/StatusBadge'
 
@@ -124,10 +126,7 @@ function Tracker({ videoId }: { videoId: string }) {
   const state = (done: boolean, active: boolean) => (done ? 'done' : active ? 'active' : 'todo')
 
   return (
-    <section aria-live="polite" className="glass rounded-3xl p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Pipeline</h2>
-      </div>
+    <section aria-live="polite" aria-label="Processing progress" className="glass rounded-3xl p-5">
       <ol className="flex flex-col gap-4 sm:flex-row">
         <Step label="Queued" state={state(claimed, !claimed)} />
         <Step label="Split" state={state(!!p?.split, claimed && !p?.split)} />
@@ -178,7 +177,7 @@ function Skeleton({ videoId }: { videoId: string }) {
   )
 }
 
-function Transcript({ segments, time, onSeek, filter }: { segments: Segment[]; time: number; onSeek: (s: number) => void; filter: string }) {
+function Transcript({ segments, screen, time, onSeek, filter }: { segments: Segment[]; screen: Segment[]; time: number; onSeek: (s: number) => void; filter: string }) {
   const box = useRef<HTMLDivElement>(null)
   const activeRef = useRef<HTMLButtonElement>(null)
   const ms = time * 1000
@@ -194,14 +193,33 @@ function Transcript({ segments, time, onSeek, filter }: { segments: Segment[]; t
 
   const terms = filter.toLowerCase().split(/\s+/).filter(Boolean)
   const filtering = terms.join('').length >= 2
-  const shown = segments.map((s, i) => ({ s, i })).filter(({ s }) => !filtering || terms.every((t) => s.text.toLowerCase().includes(t)))
+  const matches = (text: string) => terms.every((t) => text.toLowerCase().includes(t))
+  const shown = segments.map((s, i) => ({ s, i })).filter(({ s }) => !filtering || matches(s.text))
+  const onScreen = filtering ? firstAppearances(screen, matches) : []
 
-  if (segments.length === 0) return null
+  if (segments.length === 0 && onScreen.length === 0) return null
   return (
-    <Card title={filtering ? `Transcript: ${shown.length} ${shown.length === 1 ? 'line' : 'lines'} with "${filter.trim()}"` : 'Transcript'}>
-      {filtering && shown.length === 0 && (
+    <Card title={filtering ? `${shown.length + onScreen.length} ${shown.length + onScreen.length === 1 ? 'match' : 'matches'} for "${filter.trim()}"` : 'Transcript'}>
+      {onScreen.length > 0 && (
+        <div className="-mx-2 mb-2 border-b border-white/5 pb-2">
+          {onScreen.map((s) => (
+            <button
+              key={'screen' + s.from_ms}
+              onClick={() => onSeek(s.from_ms / 1000)}
+              className="flex w-full gap-3 rounded-xl px-2 py-1.5 text-left text-sm text-slate-300 transition-colors hover:bg-white/5"
+            >
+              <span className="w-12 shrink-0 pt-0.5 font-mono text-xs text-slate-500">{clock(s.from_ms / 1000)}</span>
+              <span className="min-w-0">
+                <span className="mr-2 rounded bg-sky-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">On screen</span>
+                <span>{snippet(s.text, terms)}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {filtering && shown.length === 0 && onScreen.length === 0 && (
         <p className="text-sm text-zinc-400">
-          Nobody says that in this video.{' '}
+          Nobody says or shows that in this video.{' '}
           <Link to={`/search?q=${encodeURIComponent(filter.trim())}`} className="text-amber-400 hover:text-amber-300">
             Search all videos instead
           </Link>
@@ -227,7 +245,7 @@ function Transcript({ segments, time, onSeek, filter }: { segments: Segment[]; t
   )
 }
 
-function Watch({ detail, results, startAt, filter }: { detail: VideoDetailT; results: Results | null; startAt: number; filter: string }) {
+function Watch({ detail, results, startAt, filter, asked }: { detail: VideoDetailT; results: Results | null; startAt: number; filter: string; asked: string }) {
   const ref = useRef<HTMLVideoElement>(null)
   const started = useRef(false)
   const [time, setTime] = useState(0)
@@ -259,6 +277,16 @@ function Watch({ detail, results, startAt, filter }: { detail: VideoDetailT; res
     video.currentTime = seconds
     video.play()
   }
+
+  useEffect(() => {
+    function onSeek(e: Event) {
+      seek((e as CustomEvent<number>).detail)
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ref.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+    }
+    window.addEventListener('videointell:seek', onSeek)
+    return () => window.removeEventListener('videointell:seek', onSeek)
+  }, [])
 
   return (
     <>
@@ -297,7 +325,12 @@ function Watch({ detail, results, startAt, filter }: { detail: VideoDetailT; res
             <Card title="Summary">
               <p className="text-slate-200 leading-relaxed">{results.summary.summary || 'No speech found in this video.'}</p>
             </Card>
-            <Transcript segments={results.transcript} time={time} onSeek={seek} filter={filter} />
+            {asked.length >= 2 ? (
+              <AskCard q={asked} videoId={detail.video.id} onSeek={seek} />
+            ) : (
+              filter.trim().length >= 2 && <p className="px-1 text-xs text-zinc-500">Press Enter to get an AI answer from this video.</p>
+            )}
+            <Transcript segments={results.transcript} screen={results.screen} time={time} onSeek={seek} filter={filter} />
           </div>
         </>
       )}
@@ -364,7 +397,7 @@ export default function VideoDetail() {
               <button
                 onClick={onDelete}
                 disabled={deleting}
-                className="ml-auto rounded-xl px-3 py-2 text-sm text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-red-500/15 hover:text-red-200 hover:ring-red-400/40 disabled:opacity-50"
+                className={`ml-auto rounded-xl px-3 py-2 text-sm text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-red-500/15 hover:text-red-200 hover:ring-red-400/40 disabled:opacity-50`}
               >
                 {deleting ? 'Deleting...' : 'Delete'}
               </button>
@@ -378,7 +411,7 @@ export default function VideoDetail() {
         ) : video.status === 'failed' ? (
           <div className="glass rounded-3xl border-red-400/30 p-6 text-sm text-red-300">Processing failed.</div>
         ) : (
-          <Watch detail={detail} results={results} startAt={startAt} filter={params.get('q') ?? ''} />
+          <Watch detail={detail} results={results} startAt={startAt} filter={params.get('q') ?? ''} asked={params.get('ask') === '1' ? (params.get('q') ?? '').trim() : ''} />
         )}
       </div>
     </Shell>

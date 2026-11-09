@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	maxTranscriptChars = 300_000
+	MaxTranscriptChars = 300_000
 	thumbEverySeconds  = 10
 )
 
@@ -37,6 +37,7 @@ type Tools struct {
 	ScratchDir   string
 	WhisperBin   string
 	WhisperModel string
+	TesseractBin string
 }
 
 type Rendition struct {
@@ -198,6 +199,20 @@ func Chunk(ctx context.Context, st Store, t Tools, ev Event) error {
 		}
 	}
 
+	if t.TesseractBin != "" {
+		screen, err := readScreen(t, src, dir, ev)
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(dir, "screen.json")
+		if err := writeJSON(path, screen); err != nil {
+			return err
+		}
+		if err := st.Put(ctx, screenWork(work, ev.Index), path); err != nil {
+			return err
+		}
+	}
+
 	if ev.HasAudio {
 		segments, err := transcribe(t, src, dir)
 		if err != nil {
@@ -294,6 +309,10 @@ func Assemble(ctx context.Context, st Store, t Tools, ev Event) error {
 		return err
 	}
 	if err := putString(ctx, st, dir, outPrefix+"transcript.vtt", vtt(segments)); err != nil {
+		return err
+	}
+	sj, _ := json.Marshal(map[string]any{"frames": collectScreen(ctx, st, dir, work, ev.Chunks)})
+	if err := putString(ctx, st, dir, outPrefix+"screen.json", string(sj)); err != nil {
 		return err
 	}
 	req, err := bedrockRequest(segments)
@@ -420,8 +439,8 @@ func bedrockRequest(segments []Segment) ([]byte, error) {
 		fmt.Fprintf(&b, "[%s] %s\n", clock(s.FromMS, ",")[:8], s.Text)
 	}
 	text := b.String()
-	if len(text) > maxTranscriptChars {
-		text = text[:maxTranscriptChars]
+	if len(text) > MaxTranscriptChars {
+		text = text[:MaxTranscriptChars]
 	}
 	return json.Marshal(map[string]any{
 		"messages": []map[string]any{{

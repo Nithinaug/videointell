@@ -73,6 +73,7 @@ func main() {
 		ScratchDir:   os.TempDir(),
 		WhisperBin:   "whisper-cli",
 		WhisperModel: os.Getenv("WHISPER_MODEL"),
+		TesseractBin: os.Getenv("TESSERACT_BIN"),
 	}
 
 	lambda.Start(func(ctx context.Context, ev worker.Event) (any, error) {

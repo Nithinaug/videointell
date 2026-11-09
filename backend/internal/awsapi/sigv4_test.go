@@ -40,3 +40,10 @@ func TestSignRequestAddsSessionToken(t *testing.T) {
 		t.Fatalf("headers = %v", req.Header)
 	}
 }
+
+func TestModelURL(t *testing.T) {
+	u := modelURL("ap-south-1", "apac.amazon.nova-lite-v1:0")
+	if u.RequestURI() != "/model/apac.amazon.nova-lite-v1%3A0/converse" || canonicalPath(u.EscapedPath()) != "/model/apac.amazon.nova-lite-v1%253A0/converse" {
+		t.Fatalf("wire %s canonical %s", u.RequestURI(), canonicalPath(u.EscapedPath()))
+	}
+}

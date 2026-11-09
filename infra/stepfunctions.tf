@@ -12,6 +12,7 @@ locals {
   pipeline_arn        = "arn:aws:states:${var.region}:${data.aws_caller_identity.current.account_id}:stateMachine:${local.name}-pipeline"
   bedrock_profile_arn = "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.bedrock_profile}"
   bedrock_model_id    = replace(var.bedrock_profile, "/^[a-z]+\\./", "")
+  bedrock_model_arn   = "arn:aws:bedrock:*::foundation-model/${local.bedrock_model_id}"
 
   throttling_errors = [
     "Bedrock.ThrottlingException",
@@ -280,7 +281,7 @@ data "aws_iam_policy_document" "pipeline" {
     actions = ["bedrock:InvokeModel"]
     resources = [
       local.bedrock_profile_arn,
-      "arn:aws:bedrock:*::foundation-model/${local.bedrock_model_id}",
+      local.bedrock_model_arn,
     ]
   }
 

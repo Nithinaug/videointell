@@ -86,6 +86,9 @@ func TestPipelineEndToEnd(t *testing.T) {
 
 	ctx, st := context.Background(), dirStore(data)
 	tools := Tools{ScratchDir: scratch, WhisperBin: whisper, WhisperModel: "unused"}
+	if bin, err := exec.LookPath("tesseract"); err == nil {
+		tools.TesseractBin = bin
+	}
 	plan, err := Split(ctx, st, tools, Event{Op: "split", Bucket: "b", VideoKey: key})
 	if err != nil {
 		t.Fatalf("Split: %v", err)
@@ -105,7 +108,7 @@ func TestPipelineEndToEnd(t *testing.T) {
 	out := filepath.Join(data, "processed", "u1", "1-test.mp4")
 	for _, f := range []string{
 		"hls/master.m3u8", "hls/720p/index.m3u8", "hls/480p/index.m3u8", "hls/720p/c0000_0000.ts", "hls/720p/c0002_0000.ts",
-		"thumbs/thumb_01.jpg", "thumbs/thumb_02.jpg", "progress.json", "transcript.json", "transcript.vtt", "bedrock-request.json",
+		"thumbs/thumb_01.jpg", "thumbs/thumb_02.jpg", "progress.json", "transcript.json", "transcript.vtt", "bedrock-request.json", "screen.json",
 	} {
 		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
 			t.Errorf("missing %s", f)

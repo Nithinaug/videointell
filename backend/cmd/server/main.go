@@ -4,6 +4,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"log"
 
+	"videointell/backend/internal/awsapi"
 	"videointell/backend/internal/cognito"
 	"videointell/backend/internal/config"
 	"videointell/backend/internal/db"
@@ -48,6 +49,7 @@ func main() {
 	r := router.New(router.Deps{
 		VideoHandler: videoHandler,
 		Files:        files,
+		Ask:          &handlers.AskHandler{Videos: videoHandler, AI: awsapi.NewBedrock(cfg.AWSRegion, cfg.BedrockModel)},
 		Auth:         handlers.AuthMiddleware(verifier, st),
 	})
 
