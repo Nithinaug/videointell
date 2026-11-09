@@ -46,6 +46,11 @@ func (s *Store) ListVideosForUser(userID string) ([]models.Video, error) {
 	return videos, err
 }
 
+func (s *Store) DeleteVideo(id string) error {
+	_, err := s.db.Exec(`DELETE FROM videos WHERE id=$1`, id)
+	return err
+}
+
 func (s *Store) GetVideo(id string) (models.Video, error) {
 	var v models.Video
 	err := s.db.Get(&v, `SELECT * FROM videos WHERE id=$1`, id)

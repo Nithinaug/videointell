@@ -30,6 +30,17 @@ export interface Video {
   status: 'uploading' | 'uploaded' | 'processing' | 'ready' | 'failed'
   created_at: string
   updated_at: string
+  results_url?: string
+}
+
+export interface Progress {
+  status: Video['status']
+  split: boolean
+  chunks: number
+  chunks_done: number
+  assembled: boolean
+  labels: boolean
+  summary: boolean
 }
 
 export interface VideoDetail {
@@ -44,14 +55,29 @@ export interface Summary {
   tags: string[]
 }
 
+export interface Segment {
+  from_ms: number
+  to_ms: number
+  text: string
+}
+
 export interface Results {
   summary: Summary
   labels: string[]
+  transcript: Segment[]
+}
+
+export interface SearchHit {
+  video_id: string
+  title: string
+  from_ms: number
+  text: string
+  results_url?: string
 }
 
 export async function listVideos() {
   const { data } = await api.get<{ videos: Video[] }>('/api/videos')
-  return data.videos
+  return data.videos.map((v) => (v.results_url ? { ...v, results_url: API_BASE_URL + v.results_url } : v))
 }
 
 export async function createVideo(title: string, filename: string, contentType: string) {
@@ -63,8 +89,29 @@ export async function createVideo(title: string, filename: string, contentType: 
   return data
 }
 
-export async function uploadFile(uploadUrl: string, file: File, contentType: string) {
-  await axios.put(API_BASE_URL + uploadUrl, file, { headers: { 'Content-Type': contentType } })
+export async function uploadFile(uploadUrl: string, file: File, contentType: string, onProgress?: (fraction: number) => void) {
+  await axios.put(API_BASE_URL + uploadUrl, file, {
+    headers: { 'Content-Type': contentType },
+    onUploadProgress: (e) => onProgress?.(e.total ? e.loaded / e.total : 0),
+  })
+}
+
+export async function search(q: string) {
+  const { data } = await api.get<{ results: SearchHit[] }>('/api/search', { params: { q } })
+  return data.results.map((h) => (h.results_url ? { ...h, results_url: API_BASE_URL + h.results_url } : h))
+}
+
+export async function deleteVideo(videoId: string) {
+  await api.delete(`/api/videos/${videoId}`)
+}
+
+export function canDelete(status: Video['status']) {
+  return status !== 'uploaded' && status !== 'processing'
+}
+
+export async function getProgress(videoId: string) {
+  const { data } = await api.get<Progress>(`/api/videos/${videoId}/progress`)
+  return data
 }
 
 export async function getVideoDetail(videoId: string) {
@@ -80,7 +127,11 @@ export async function getResults(resultsUrl: string): Promise<Results | null> {
       axios.get<Summary>(resultsUrl + 'summary.json'),
       axios.get<string[]>(resultsUrl + 'labels.json'),
     ])
-    return { summary: summary.data, labels: labels.data }
+    const transcript = await axios
+      .get<{ segments?: Segment[] }>(resultsUrl + 'transcript.json')
+      .then((r) => r.data.segments ?? [])
+      .catch(() => [])
+    return { summary: summary.data, labels: labels.data, transcript }
   } catch {
     return null
   }

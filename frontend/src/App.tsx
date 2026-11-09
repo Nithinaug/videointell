@@ -1,9 +1,11 @@
-import { useEffect } from 'react'
-import { Route, BrowserRouter, Routes } from 'react-router-dom'
+import { AnimatePresence, MotionConfig, motion } from 'motion/react'
+import { useEffect, type ReactNode } from 'react'
+import { Route, BrowserRouter, Routes, useLocation } from 'react-router-dom'
 import { startLogin } from './auth'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
+import Search from './pages/Search'
 import Upload from './pages/Upload'
 import VideoDetail from './pages/VideoDetail'
 
@@ -12,48 +14,77 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!token) startLogin()
   }, [token])
-  if (!token) return <div className="min-h-screen flex items-center justify-center bg-[#07090c] text-slate-400">Redirecting to sign in...</div>
+  if (!token) return <div className="min-h-screen flex items-center justify-center bg-[#05060a] text-slate-400">Redirecting to sign in...</div>
   return <>{children}</>
 }
 
-function AppRoutes() {
+function Page({ children }: { children: ReactNode }) {
   return (
-    <Routes>
-      <Route path="/auth/callback" element={<AuthCallback />} />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/upload"
-        element={
-          <ProtectedRoute>
-            <Upload />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/videos/:id"
-        element={
-          <ProtectedRoute>
-            <VideoDetail />
-          </ProtectedRoute>
-        }
-      />
-    </Routes>
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.25, ease: 'easeOut' }}>
+      {children}
+    </motion.div>
+  )
+}
+
+function AppRoutes() {
+  const location = useLocation()
+  return (
+    <AnimatePresence mode="popLayout" initial={false}>
+      <Routes location={location} key={location.pathname}>
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Page>
+                <Dashboard />
+              </Page>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/search"
+          element={
+            <ProtectedRoute>
+              <Page>
+                <Search />
+              </Page>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/upload"
+          element={
+            <ProtectedRoute>
+              <Page>
+                <Upload />
+              </Page>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/videos/:id"
+          element={
+            <ProtectedRoute>
+              <Page>
+                <VideoDetail />
+              </Page>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </AnimatePresence>
   )
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </AuthProvider>
+    <MotionConfig reducedMotion="user">
+      <AuthProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </AuthProvider>
+    </MotionConfig>
   )
 }

@@ -73,7 +73,7 @@ func OutputPrefix(videoKey string) (string, error) {
 	return "processed/" + rest + "/", nil
 }
 
-func workPrefix(videoKey string) string {
+func WorkPrefix(videoKey string) string {
 	return "work/" + strings.TrimPrefix(videoKey, "uploads/") + "/"
 }
 
@@ -119,7 +119,7 @@ func Split(ctx context.Context, st Store, t Tools, ev Event) (Event, error) {
 		}
 		start, _ := strconv.ParseFloat(fields[1], 64)
 		end, _ := strconv.ParseFloat(fields[2], 64)
-		if err := st.Put(ctx, workPrefix(ev.VideoKey)+fields[0], filepath.Join(dir, fields[0])); err != nil {
+		if err := st.Put(ctx, WorkPrefix(ev.VideoKey)+fields[0], filepath.Join(dir, fields[0])); err != nil {
 			return Event{}, err
 		}
 		out.Chunks = append(out.Chunks, Event{
@@ -127,10 +127,15 @@ func Split(ctx context.Context, st Store, t Tools, ev Event) (Event, error) {
 			Start: start, Duration: end - start, HasAudio: info.HasAudio, Renditions: out.Renditions,
 		})
 	}
+	if err := sc.Err(); err != nil {
+		return Event{}, err
+	}
 	if len(out.Chunks) == 0 {
 		return Event{}, errors.New("no chunks made")
 	}
-	return out, sc.Err()
+	progress := fmt.Sprintf(`{"chunks":%d}`, len(out.Chunks))
+	outPrefix, _ := OutputPrefix(ev.VideoKey)
+	return out, putString(ctx, st, dir, outPrefix+"progress.json", progress)
 }
 
 func Chunk(ctx context.Context, st Store, t Tools, ev Event) error {
@@ -138,7 +143,7 @@ func Chunk(ctx context.Context, st Store, t Tools, ev Event) error {
 	if err != nil {
 		return err
 	}
-	work := workPrefix(ev.VideoKey)
+	work := WorkPrefix(ev.VideoKey)
 	dir, err := os.MkdirTemp(t.ScratchDir, "chunk-")
 	if err != nil {
 		return err
@@ -193,23 +198,25 @@ func Chunk(ctx context.Context, st Store, t Tools, ev Event) error {
 		}
 	}
 
-	if !ev.HasAudio {
-		return nil
+	if ev.HasAudio {
+		segments, err := transcribe(t, src, dir)
+		if err != nil {
+			return err
+		}
+		shift := int64(math.Round(ev.Start * 1000))
+		for i := range segments {
+			segments[i].FromMS += shift
+			segments[i].ToMS += shift
+		}
+		path := filepath.Join(dir, "transcript.json")
+		if err := writeJSON(path, segments); err != nil {
+			return err
+		}
+		if err := st.Put(ctx, fmt.Sprintf("%stranscript_%04d.json", work, ev.Index), path); err != nil {
+			return err
+		}
 	}
-	segments, err := transcribe(t, src, dir)
-	if err != nil {
-		return err
-	}
-	shift := int64(math.Round(ev.Start * 1000))
-	for i := range segments {
-		segments[i].FromMS += shift
-		segments[i].ToMS += shift
-	}
-	path := filepath.Join(dir, "transcript.json")
-	if err := writeJSON(path, segments); err != nil {
-		return err
-	}
-	return st.Put(ctx, fmt.Sprintf("%stranscript_%04d.json", work, ev.Index), path)
+	return putString(ctx, st, dir, fmt.Sprintf("%sdone_%04d", work, ev.Index), "")
 }
 
 func Assemble(ctx context.Context, st Store, t Tools, ev Event) error {
@@ -217,7 +224,7 @@ func Assemble(ctx context.Context, st Store, t Tools, ev Event) error {
 	if err != nil {
 		return err
 	}
-	work := workPrefix(ev.VideoKey)
+	work := WorkPrefix(ev.VideoKey)
 	dir, err := os.MkdirTemp(t.ScratchDir, "assemble-")
 	if err != nil {
 		return err

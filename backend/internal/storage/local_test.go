@@ -2,6 +2,8 @@ package storage
 
 import (
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -78,5 +80,29 @@ func TestMarkDoneAndCheckMount(t *testing.T) {
 	}
 	if err := CheckMount(dir); err == nil {
 		t.Errorf("CheckMount(%q) passed for a plain folder", dir)
+	}
+}
+
+func TestRemoveAll(t *testing.T) {
+	dir := t.TempDir()
+	l := NewLocalStorage(dir, "s")
+	for _, k := range []string{"uploads/u/a.mp4", "uploads/u/a.mp4.done", "processed/u/a.mp4/hls/720p/c0000_0000.ts", "processed/u/a.mp4/summary.json", "uploads/u/b.mp4"} {
+		if err := l.Write(k, strings.NewReader("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := l.RemoveAll("uploads/u/a.mp4", "uploads/u/a.mp4.done", "processed/u/a.mp4/", "work/u/a.mp4/"); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+	for _, gone := range []string{"uploads/u/a.mp4", "uploads/u/a.mp4.done", "processed/u/a.mp4"} {
+		if _, err := os.Stat(filepath.Join(dir, gone)); err == nil {
+			t.Errorf("%s still exists", gone)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "uploads/u/b.mp4")); err != nil {
+		t.Errorf("other video deleted: %v", err)
+	}
+	if err := l.RemoveAll("../outside"); err == nil {
+		t.Error("key outside the data dir accepted")
 	}
 }

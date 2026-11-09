@@ -56,3 +56,21 @@ func TestResultScopedToVideoFolder(t *testing.T) {
 		}
 	}
 }
+
+func TestContainsAll(t *testing.T) {
+	cases := []struct {
+		text  string
+		terms []string
+		want  bool
+	}{
+		{"We agreed on the Pricing plan", []string{"pricing", "plan"}, true},
+		{"We agreed on the Pricing plan", []string{"plan", "pricing"}, true},
+		{"We agreed on the Pricing plan", []string{"pricing", "budget"}, false},
+		{"anything", nil, true},
+	}
+	for _, c := range cases {
+		if got := containsAll(c.text, c.terms); got != c.want {
+			t.Errorf("containsAll(%q, %v) = %v, want %v", c.text, c.terms, got, c.want)
+		}
+	}
+}

@@ -1,23 +1,17 @@
-const STYLES: Record<string, string> = {
-  uploading: 'bg-[#334155]/30 text-slate-300',
-  uploaded: 'bg-[#38BDF8]/15 text-sky-300',
-  processing: 'bg-[#F59E0B]/15 text-amber-300',
-  ready: 'bg-[#10B981]/15 text-emerald-300',
-  failed: 'bg-[#EF4444]/15 text-red-300',
-}
-
-const LABELS: Record<string, string> = {
-  uploading: 'Uploading',
-  uploaded: 'Uploaded',
-  processing: 'Processing',
-  ready: 'Ready',
-  failed: 'Failed',
+const STYLES: Record<string, { chip: string; dot: string; label: string; live?: boolean }> = {
+  uploading: { chip: 'bg-white/5 text-slate-300 ring-white/10', dot: 'bg-slate-400', label: 'Uploading', live: true },
+  uploaded: { chip: 'bg-sky-400/10 text-sky-200 ring-sky-400/25', dot: 'bg-sky-400', label: 'Queued', live: true },
+  processing: { chip: 'bg-violet-400/10 text-violet-200 ring-violet-400/25', dot: 'bg-violet-400', label: 'Processing', live: true },
+  ready: { chip: 'bg-emerald-400/10 text-emerald-200 ring-emerald-400/25', dot: 'bg-emerald-400', label: 'Ready' },
+  failed: { chip: 'bg-red-400/10 text-red-200 ring-red-400/25', dot: 'bg-red-400', label: 'Failed' },
 }
 
 export default function StatusBadge({ status }: { status: string }) {
+  const s = STYLES[status] ?? STYLES.uploading
   return (
-    <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold ${STYLES[status] ?? 'bg-[#334155]/30 text-slate-300'}`}>
-      {LABELS[status] ?? status}
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 backdrop-blur ${s.chip}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${s.dot} ${s.live ? 'pulse-dot' : ''}`} />
+      {s.label}
     </span>
   )
 }

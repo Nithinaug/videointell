@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -65,7 +68,158 @@ func (h *VideoHandler) List(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"videos": videos})
+	type item struct {
+		models.Video
+		ResultsURL string `json:"results_url,omitempty"`
+	}
+	items := make([]item, 0, len(videos))
+	for _, v := range videos {
+		it := item{Video: v}
+		if prefix, err := worker.OutputPrefix(v.OriginalKey); err == nil && v.Status != "uploading" {
+			it.ResultsURL = h.Storage.DirURL(prefix)
+		}
+		items = append(items, it)
+	}
+	c.JSON(http.StatusOK, gin.H{"videos": items})
+}
+
+type searchHit struct {
+	VideoID string `json:"video_id"`
+	Title   string `json:"title"`
+	FromMS  int64  `json:"from_ms"`
+	Text    string `json:"text"`
+	Results string `json:"results_url,omitempty"`
+}
+
+const maxSearchHits = 50
+
+func containsAll(text string, terms []string) bool {
+	text = strings.ToLower(text)
+	for _, term := range terms {
+		if !strings.Contains(text, term) {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *VideoHandler) Search(c *gin.Context) {
+	terms := strings.Fields(strings.ToLower(c.Query("q")))
+	if len(terms) == 0 || len(strings.Join(terms, "")) < 2 {
+		c.JSON(http.StatusOK, gin.H{"results": []searchHit{}})
+		return
+	}
+	videos, err := h.Store.ListVideosForUser(c.GetString("user_id"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	hits := []searchHit{}
+	for _, v := range videos {
+		if v.Status != "ready" {
+			continue
+		}
+		out, err := worker.OutputPrefix(v.OriginalKey)
+		if err != nil {
+			continue
+		}
+		p, err := h.Storage.Path(out + "transcript.json")
+		if err != nil {
+			continue
+		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var t struct {
+			Segments []struct {
+				FromMS int64  `json:"from_ms"`
+				Text   string `json:"text"`
+			} `json:"segments"`
+		}
+		if json.Unmarshal(raw, &t) != nil {
+			continue
+		}
+		for _, s := range t.Segments {
+			if containsAll(s.Text, terms) {
+				hits = append(hits, searchHit{VideoID: v.ID, Title: v.Title, FromMS: s.FromMS, Text: s.Text, Results: h.Storage.DirURL(out)})
+				if len(hits) == maxSearchHits {
+					c.JSON(http.StatusOK, gin.H{"results": hits})
+					return
+				}
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"results": hits})
+}
+
+func (h *VideoHandler) Delete(c *gin.Context) {
+	video, err := h.Store.GetVideo(c.Param("id"))
+	if err != nil || video.UserID != c.GetString("user_id") {
+		c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
+		return
+	}
+	if video.Status == "uploaded" || video.Status == "processing" {
+		c.JSON(http.StatusConflict, gin.H{"error": "this video is still processing; delete it once it is ready"})
+		return
+	}
+	keys := []string{video.OriginalKey, video.OriginalKey + storage.DoneSuffix}
+	if out, err := worker.OutputPrefix(video.OriginalKey); err == nil {
+		keys = append(keys, out, worker.WorkPrefix(video.OriginalKey))
+	}
+	if err := h.Storage.RemoveAll(keys...); err != nil {
+		log.Printf("delete files %s: %v", video.OriginalKey, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete the video files"})
+		return
+	}
+	if err := h.Store.DeleteVideo(video.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete the video"})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *VideoHandler) Progress(c *gin.Context) {
+	video, err := h.Store.GetVideo(c.Param("id"))
+	if err != nil || video.UserID != c.GetString("user_id") {
+		c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
+		return
+	}
+	out, err := worker.OutputPrefix(video.OriginalKey)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
+		return
+	}
+	exists := func(key string) bool {
+		p, err := h.Storage.Path(key)
+		if err != nil {
+			return false
+		}
+		_, err = os.Stat(p)
+		return err == nil
+	}
+	var plan struct {
+		Chunks int `json:"chunks"`
+	}
+	if p, err := h.Storage.Path(out + "progress.json"); err == nil {
+		if raw, err := os.ReadFile(p); err == nil {
+			json.Unmarshal(raw, &plan)
+		}
+	}
+	done := 0
+	if dir, err := h.Storage.Path(worker.WorkPrefix(video.OriginalKey)); err == nil {
+		marks, _ := filepath.Glob(filepath.Join(dir, "done_*"))
+		done = len(marks)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":      video.Status,
+		"split":       plan.Chunks > 0,
+		"chunks":      plan.Chunks,
+		"chunks_done": min(done, plan.Chunks),
+		"assembled":   exists(out + "bedrock-request.json"),
+		"labels":      exists(out + "labels.json"),
+		"summary":     exists(out + "summary.json"),
+	})
 }
 
 func (h *VideoHandler) Detail(c *gin.Context) {

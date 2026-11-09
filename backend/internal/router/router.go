@@ -31,6 +31,13 @@ func New(d Deps) *gin.Engine {
 			videos.POST("", d.VideoHandler.Create)
 			videos.GET("", d.VideoHandler.List)
 			videos.GET("/:id", d.VideoHandler.Detail)
+			videos.GET("/:id/progress", d.VideoHandler.Progress)
+			videos.DELETE("/:id", d.VideoHandler.Delete)
+		}
+		search := api.Group("/search")
+		search.Use(d.Auth)
+		{
+			search.GET("", d.VideoHandler.Search)
 		}
 	}
 

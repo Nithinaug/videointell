@@ -106,6 +106,42 @@ func CheckMount(dir string) error {
 	return nil
 }
 
+func (l *LocalStorage) RemoveAll(keys ...string) error {
+	for _, key := range keys {
+		root, err := l.Path(strings.TrimSuffix(key, "/"))
+		if err != nil {
+			return err
+		}
+		var files, dirs []string
+		err = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				dirs = append(dirs, p)
+			} else {
+				files = append(files, p)
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		for _, f := range files {
+			if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+		for i := len(dirs) - 1; i >= 0; i-- {
+			os.Remove(dirs[i])
+		}
+	}
+	return nil
+}
+
 func (l *LocalStorage) Path(key string) (string, error) {
 	path := filepath.Join(l.DataDir, filepath.FromSlash(key))
 	rel, err := filepath.Rel(l.DataDir, path)

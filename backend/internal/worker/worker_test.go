@@ -105,11 +105,14 @@ func TestPipelineEndToEnd(t *testing.T) {
 	out := filepath.Join(data, "processed", "u1", "1-test.mp4")
 	for _, f := range []string{
 		"hls/master.m3u8", "hls/720p/index.m3u8", "hls/480p/index.m3u8", "hls/720p/c0000_0000.ts", "hls/720p/c0002_0000.ts",
-		"thumbs/thumb_01.jpg", "thumbs/thumb_02.jpg", "transcript.json", "transcript.vtt", "bedrock-request.json",
+		"thumbs/thumb_01.jpg", "thumbs/thumb_02.jpg", "progress.json", "transcript.json", "transcript.vtt", "bedrock-request.json",
 	} {
 		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
 			t.Errorf("missing %s", f)
 		}
+	}
+	if done, _ := filepath.Glob(filepath.Join(data, "work", "u1", "1-test.mp4", "done_*")); len(done) != 3 {
+		t.Errorf("done markers = %d, want 3", len(done))
 	}
 	if _, err := os.Stat(filepath.Join(out, "hls/1080p")); err == nil {
 		t.Error("1080p made from a 720p source")
