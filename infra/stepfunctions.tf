@@ -15,6 +15,7 @@ locals {
     "Rekognition.ProvisionedThroughputExceededException",
     "Rekognition.ThrottlingException",
     "S3.SlowDownException",
+    "RdsData.DatabaseResumingException",
   ]
 
   retry_throttling = [{
@@ -27,8 +28,16 @@ locals {
 
   catch_all = [{
     ErrorEquals = ["States.ALL"]
-    Next        = "NotifyFailed"
+    Next        = "MarkFailed"
   }]
+
+  db = {
+    ResourceArn = aws_rds_cluster.db.arn
+    SecretArn   = aws_secretsmanager_secret.pipeline_db.arn
+    Database    = "videointell"
+  }
+
+  key_param = { Name = "key", Value = { StringValue = "{% $videoKey %}" } }
 
   pipeline_definition = {
     Comment        = "Process one finished upload, started by its .done marker"
@@ -43,7 +52,30 @@ locals {
           videoKey = "{% $substring($states.input.detail.object.key, 0, $length($states.input.detail.object.key) - 5) %}"
           out      = "{% 'processed/' & $substring($states.input.detail.object.key, 8, $length($states.input.detail.object.key) - 13) & '/' %}"
         }
-        Next = "ProcessVideo"
+        Next = "MarkProcessing"
+      }
+
+      MarkProcessing = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::aws-sdk:rdsdata:executeStatement"
+        Arguments = merge(local.db, {
+          Sql        = "SELECT set_video_status(:key, ARRAY['uploaded'], 'processing')"
+          Parameters = [local.key_param]
+        })
+        Output = "{% $states.result.Records[0][0].BooleanValue %}"
+        Retry  = local.retry_throttling
+        Catch  = local.catch_all
+        Next   = "Claimed"
+      }
+
+      Claimed = {
+        Type    = "Choice"
+        Choices = [{ Condition = "{% $states.input %}", Next = "ProcessVideo" }]
+        Default = "AlreadyHandled"
+      }
+
+      AlreadyHandled = {
+        Type = "Succeed"
       }
 
       ProcessVideo = {
@@ -105,7 +137,7 @@ locals {
         Type = "Choice"
         Choices = [
           { Condition = "{% $states.input.status = 'SUCCEEDED' %}", Next = "SaveLabels" },
-          { Condition = "{% $states.input.status = 'FAILED' %}", Next = "NotifyFailed" },
+          { Condition = "{% $states.input.status = 'FAILED' %}", Next = "MarkFailed" },
         ]
         Default = "WaitForLabels"
       }
@@ -149,6 +181,21 @@ locals {
         }
         Retry = local.retry_throttling
         Catch = local.catch_all
+        Next  = "MarkReady"
+      }
+
+      MarkReady = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::aws-sdk:rdsdata:executeStatement"
+        Arguments = merge(local.db, {
+          Sql = "SELECT set_video_status(:key, ARRAY['processing'], 'ready', :results::jsonb)"
+          Parameters = [
+            local.key_param,
+            { Name = "results", Value = { StringValue = "{% $string({'prefix': $out}) %}" } },
+          ]
+        })
+        Retry = local.retry_throttling
+        Catch = local.catch_all
         Next  = "NotifyReady"
       }
 
@@ -161,6 +208,19 @@ locals {
           Message  = "{% 'Processed ' & $videoKey & '. Results: s3://' & $bucket & '/' & $out %}"
         }
         End = true
+      }
+
+      MarkFailed = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::aws-sdk:rdsdata:executeStatement"
+        Arguments = merge(local.db, {
+          Sql        = "SELECT set_video_status(:key, ARRAY['uploaded', 'processing'], 'failed')"
+          Parameters = [local.key_param]
+        })
+        Output = "{% $states.input %}"
+        Retry  = local.retry_throttling
+        Catch  = [{ ErrorEquals = ["States.ALL"], Next = "NotifyFailed" }]
+        Next   = "NotifyFailed"
       }
 
       NotifyFailed = {
@@ -241,6 +301,16 @@ data "aws_iam_policy_document" "pipeline" {
       local.bedrock_profile_arn,
       "arn:aws:bedrock:*::foundation-model/${local.bedrock_model_id}",
     ]
+  }
+
+  statement {
+    actions   = ["rds-data:ExecuteStatement"]
+    resources = [aws_rds_cluster.db.arn]
+  }
+
+  statement {
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.pipeline_db.arn]
   }
 
   statement {

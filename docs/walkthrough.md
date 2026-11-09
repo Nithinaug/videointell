@@ -21,7 +21,8 @@ way to check it works. Sections are added as each build step is finished.
 | Step 1: worker on AWS | 4-10 | Done |
 | Step 2: Bedrock summary | 11 | Done |
 | Step 3: results page | 12 | Done |
-| Steps 4-8 | - | Not started |
+| Step 4: Aurora and video status | 13 | Done |
+| Steps 5-8 | - | Not started |
 
 ## The big picture
 
@@ -724,3 +725,79 @@ Run the API and frontend (section 1), open a video that has
 `processed/<user>/<file>/summary.json`, then click a chapter: the player
 jumps and the chapter is highlighted. `go test ./internal/handlers/` checks
 that the results route refuses other folders and `..`.
+
+---
+
+## 13. Aurora and video status (step 4)
+
+**What:** an Aurora PostgreSQL Serverless v2 database holds users and
+videos. The pipeline changes a video's status through the RDS Data API,
+always by calling one function, `set_video_status(key, from, to, results)`,
+which only changes the row if its current status is in `from`.
+
+**Free plan limits:** only "express configuration" clusters are allowed:
+up to 4 ACU, 1 GB storage, 2 clusters. An express cluster has no VPC: it
+is reached through Aurora's internet access gateway, over TLS, and its
+admin user signs in with IAM tokens only (no password). The Data API needs
+a separate password user, kept in Secrets Manager.
+
+**Cost:** billed per ACU-hour only while awake (roughly $0.15 per ACU-hour,
+estimate). It pauses after 5 minutes idle; the first call after a pause
+takes about 15 seconds and the pipeline retries
+`RdsData.DatabaseResumingException`.
+
+### Console
+
+1. **RDS** (ap-south-1) -> **Databases** -> **Create with express
+   configuration** -> **Create**. Capacity range 0 to 4 ACU. Wait for
+   **Available**. (This project's cluster kept the default name
+   `database-1`.)
+2. The Data API is turned on by Terraform below (Console: **Modify** ->
+   **RDS Data API**).
+
+### Terraform
+
+`infra/database.tf`: `import` blocks bring the Console cluster and its
+instance under Terraform (the AWS provider cannot create express clusters).
+It turns on the Data API, keeps 0 to 4 ACU with a 5 minute auto-pause, and
+creates the `videointell/pipeline-db` secret with a random password.
+
+`infra/stepfunctions.tf`: three Data API states call
+`arn:aws:states:::aws-sdk:rdsdata:executeStatement`:
+
+| State | SQL | After |
+|---|---|---|
+| `MarkProcessing` | `uploaded -> processing` | `false` means another run has it or the row is missing: stop with `AlreadyHandled` |
+| `MarkReady` | `processing -> ready`, results `{"prefix": ...}` | SNS "Video processed" |
+| `MarkFailed` | `uploaded, processing -> failed` | SNS failure email (every `Catch` goes here first) |
+
+The role may call `rds-data:ExecuteStatement` on the cluster and
+`secretsmanager:GetSecretValue` on the one secret.
+
+### Database setup (one time)
+
+`infra/db-setup.sql` creates the `videointell` database, runs the app
+migrations and creates the `pipeline` user. Run it as `postgres` with an
+IAM token (made on your machine, valid 15 minutes):
+
+```bash
+cd infra
+H=<cluster endpoint>
+PGPASSWORD="$(aws rds generate-db-auth-token --hostname $H --port 5432 --username postgres --region ap-south-1)" \
+  psql "host=$H dbname=postgres user=postgres sslmode=require" \
+  -v pw="$(aws secretsmanager get-secret-value --secret-id videointell/pipeline-db --region ap-south-1 --query SecretString --output text | python3 -c 'import sys,json;print(json.load(sys.stdin)["password"])')" \
+  -f db-setup.sql
+```
+
+### Check it
+
+Add a row with status `uploaded` for the test key, run the pipeline
+(section 10), then:
+
+```bash
+aws rds-data execute-statement --region ap-south-1 --resource-arn <cluster arn> \
+  --secret-arn <secret arn> --database videointell \
+  --sql "SELECT status, results::text FROM videos WHERE original_key = 'uploads/u1/1-test.mp4'"
+```
+
+Measured: `ready` with `{"prefix": "processed/u1/1-test.mp4/"}`.

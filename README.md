@@ -55,10 +55,12 @@ folder. That is deliberate, not accidental complexity.
   **Rekognition Video** (labels), **Bedrock** (summary, chapters, tags), then
   the result into **Aurora PostgreSQL** through the **RDS Data API**, and an
   **SNS** email.
-- **Aurora PostgreSQL** (provisioned instance) stores users, videos, status
-  and results; the API reads it with a normal Postgres driver. Aurora is
-  required, not plain RDS, because Step Functions writes to it through the
-  RDS Data API.
+- **Aurora PostgreSQL Serverless v2** (express configuration, 0 to 4 ACU,
+  pauses after 5 minutes idle) stores users, videos, status and results.
+  Aurora is required, not plain RDS, because Step Functions writes to it
+  through the RDS Data API. On the Free plan only express clusters are
+  allowed: no VPC, reached through Aurora's internet access gateway, IAM
+  sign-in only. The API signs its IAM sign-in token with Go stdlib.
 - **CloudFront** serves the processed video from S3 through Origin Access
   Control, protected by signed cookies.
 
@@ -217,7 +219,7 @@ unknown key changes nothing.
           |                                |
    Public Subnet: ALB, NAT          Public Subnet: ALB
    Private Subnet: EC2 (ECS)        Private Subnet: EC2 (ECS)
-   DB Subnet: Aurora writer         DB Subnet: (later: Aurora reader)
+   (Aurora express cluster sits outside the VPC, reached over TLS with IAM tokens)
 ```
 
 **Built so far (worker only):** two public subnets, an internet gateway and
@@ -379,10 +381,13 @@ Done:
       results-folder URL (`/api/results/<exp>/<sig>/processed/...`)
 
 To do, in build order:
-- [ ] Terraform: VPC, ALB, EC2 Auto Scaling groups (Mountpoint), ECS, Aurora
-      with Data API
-- [ ] Pipeline: add `set_video_status`; run
-      Rekognition on the worker's MP4
+- [x] Aurora Serverless v2 (express, created in the Console and imported into
+      Terraform), Data API with a `pipeline` user in Secrets Manager; the
+      pipeline claims the video (`uploaded -> processing`, stops if not
+      claimed), then sets `ready` with results or `failed`; run on AWS
+- [ ] Terraform: ALB, API Auto Scaling group (Mountpoint), API on ECS
+      signing IAM tokens for Aurora
+- [ ] Rekognition on the worker's MP4
 - [ ] Replace JWT auth with Cognito on the ALB and the identity middleware
 - [ ] Terraform: CloudFront, WAF, Route 53, Cognito, alarms, CloudTrail;
       playback cookie endpoint
