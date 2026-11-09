@@ -6,7 +6,7 @@ resource "aws_cognito_user_pool" "main" {
   deletion_protection      = "ACTIVE"
 
   password_policy {
-    minimum_length = 12
+    minimum_length = 8
   }
 
   account_recovery_setting {
@@ -45,9 +45,9 @@ resource "aws_cognito_user_pool_client" "web" {
 resource "aws_cognito_managed_login_branding" "web" {
   user_pool_id                = aws_cognito_user_pool.main.id
   client_id                   = aws_cognito_user_pool_client.web.id
-  use_cognito_provided_values = true
+  settings = jsonencode(jsondecode(file("${path.module}/branding/settings.json")))
 
   lifecycle {
-    ignore_changes = [use_cognito_provided_values, settings, asset]
+    ignore_changes = [asset]
   }
 }

@@ -53,8 +53,8 @@ signed URLs.
 
 ## Goals
 
-*   The search box says what it searches. The placeholder reads "Search what was
-    said in your videos". A chip shows "All videos" or "This video". The results
+*   The search box says what it searches. The placeholder reads "Find a moment:
+    type words someone said" (shipped). A chip shows "All videos" or "This video". The results
     header states the scope and the query. Processing videos are named as not yet
     included.
 *   On a video page the box searches only that video. On the library page it
@@ -178,9 +178,16 @@ Browser (owner)                          Browser (viewer, signed out)
 
 ### 1. Search box wording and scope (step one, front end plus one query parameter)
 
-*   The top-bar box shows the placeholder "Search what was said in your videos" and a
-    scope chip. The chip shows "This video" on a video page and "All videos"
-    elsewhere. The author can switch the chip.
+*   **Already shipped** (do not rebuild): the top-bar box has a search icon, the
+    placeholder "Find a moment: type words someone said", the aria label "Search the
+    spoken words in all your videos" and a matching tooltip (`Shell.tsx`). The results
+    page shows the line "Moments where this was said, across all your videos (N).
+    Click one to play from there." and the empty state "Nobody says that in any of
+    your videos. Try fewer or different words." (`Search.tsx`). A failed request
+    shows an error instead of loading forever.
+*   **Still to build**: a scope chip next to the box. It shows "This video" on a
+    video page and "All videos" elsewhere, and the author can switch it. The
+    results line names the scope instead of always saying "all your videos".
 *   `GET /api/search` takes an optional `video_id`. When it is set, only that video
     is scanned (and must belong to the caller). The response gains `searched` (how
     many ready videos were scanned) and `skipped` (how many were not ready), so the
@@ -288,8 +295,8 @@ Browser (owner)                          Browser (viewer, signed out)
 *   **Page**: a route `/share/:token` outside the sign-in guard, using plain `fetch`, not
     the shared axios client, because that client sends any 401 to the Cognito login.
     It has its own frame instead of the app shell, and shows the player, chapters,
-    summary, transcript and clip bookmarks. It hides the Tags and "Seen in the video"
-    cards, since `labels.json` is not served. Expired, cancelled, deleted and malformed
+    summary, transcript and clip bookmarks (the app no longer has Tags or labels
+    cards). Expired, cancelled, deleted and malformed
     links all show one "link not available" page.
 *   **Owner screen**: on the video page, a Share panel to create a link (choose 1, 7 or
     30 days), copy it (shown once), see existing links and cancel them. The delete
@@ -502,7 +509,9 @@ Build order, each stage shippable on its own:
 
 0.  **Prep**: move the SigV4 helpers, name the columns in `store.go`, check the
     Bedrock route.
-1.  **Wording and scope**: front end plus the `video_id` search parameter.
+1.  **Scope**: the wording is shipped; this stage adds the scope chip, the
+    `video_id` search parameter, `searched` and `skipped`, the 300 ms type-ahead,
+    "Keep typing..." and the 10-minute user cache in the middleware.
 2.  **Ask**.
 3.  **Clips**.
 4.  **Share links**.
@@ -560,6 +569,14 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
         now)`, which sets `Host`, `X-Amz-Date`, `X-Amz-Security-Token`,
         `X-Amz-Content-Sha256` and `Authorization`. The canonical path encodes each
         path segment twice, so `:` in a model id becomes `%253A`.
+    *   **Wire path**: Go's `url.URL` sends `:` unescaped by default, which would not
+        match the signature. The Bedrock client builds the path itself: each segment
+        is escaped once with `url.PathEscape` plus `:` → `%3A`, and the request sets
+        both `URL.Path` (unescaped) and `URL.RawPath` (escaped once), so the request
+        line carries `/model/apac.amazon.nova-lite-v1%3A0/converse`. The signer
+        builds the canonical path from `URL.EscapedPath()` and escapes it once more.
+        The test asserts both strings: the wire path with `%3A` and the canonical
+        path with `%253A`.
 
 3.  `backend/internal/awsapi/bedrock.go` (Create)
     *   **Type / Scope**: Go client.
@@ -601,6 +618,15 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
         `DeleteClip`, `CreateShare`, `ListShares`, `RevokeShare`,
         `CountActiveShares` and `ShareByHash`, where `ShareByHash` returns the video
         only if the row is not revoked, not expired and the video is `ready`.
+    *   **Ownership (security)**: `DeleteClip(videoID, clipID)` and
+        `RevokeShare(videoID, shareID)` take both ids and run `... WHERE id = $1 AND
+        video_id = $2`, returning not found when no row matched. The handler first
+        loads the video by `:id` and checks it belongs to the caller (the existing
+        `GetVideo` + `UserID` check), then passes `:id` and the clip or share id. A
+        clip or share id from another user's video therefore matches no row. Do not
+        copy the `DeleteVideo(id)` pattern, which takes one id. A handler test
+        covers user B deleting user A's clip and cancelling user A's link: both get
+        404 and the rows stay.
 
 10. `backend/internal/storage/local.go` (Modify)
     *   **Type / Scope**: Go.
@@ -696,8 +722,9 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
 
 24. `frontend/src/components/Shell.tsx` (Modify)
     *   **Type / Scope**: React component.
-    *   **Proposed Changes**: placeholder "Search what was said in your videos"; aria
-        label to match; a scope chip that defaults to "This video" on `/videos/:id` and
+    *   **Proposed Changes**: keep the shipped icon, placeholder, aria label and
+        tooltip; when the chip is "This video", the aria label and tooltip say "this
+        video" instead of "all your videos". Add a scope chip that defaults to "This video" on `/videos/:id` and
         "All videos" elsewhere, and can be switched; an Ask button labelled with the
         scope. Typing updates the `q` parameter after 300 ms (on `/search` or on the
         video page, using replace so the back button is not flooded). Enter and the
@@ -712,18 +739,26 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
 
 26. `frontend/src/pages/Search.tsx` (Modify)
     *   **Type / Scope**: React page.
-    *   **Proposed Changes**: header "Spoken words in N videos matching "q"" (or "in this
-        video"), a line naming videos still processing, "Keep typing..." under 2
-        characters, the AskCard above the results when asked, and the empty state "No
-        exact word matches. Press Enter to ask."
+    *   **Proposed Changes**: keep the shipped header (the query in quotes) and
+        results line; change "across all your videos" to "in this video" when scoped,
+        and add "N videos searched" from `searched`. Add a line naming videos still
+        processing (from `skipped`), "Keep typing..." under 2 characters, and the
+        AskCard above the results when asked. Keep the shipped empty-state text and
+        append "Press Enter to ask."
 
 27. `frontend/src/pages/VideoDetail.tsx` (Modify)
     *   **Type / Scope**: React page.
     *   **Proposed Changes**: filter the loaded transcript by the `q` parameter; show the
         AskCard above it when `ask=1`; mount the clips and share panels; export `Watch`,
-        `ChapterStrip`, `Transcript`, `Card` and `Chips` for the share page. `Watch` takes
-        optional props: a clip to stop at, and a function that supplies the current
-        signed base for segment requests. Updated delete confirmation text.
+        `ChapterStrip`, `Transcript` and `Card` for the share page (the Tags and labels
+        cards and `Chips` are already removed). Updated delete confirmation text.
+    *   **`Watch` for the share page**: `Watch` becomes a pure player. It takes
+        `base` (the current signed folder URL), `poster`, `captions` (VTT URL),
+        `startAt`, an optional clip to stop at, and an optional `rewrite(url)`
+        hook for hls.js requests. It does not import `api/client` and calls no
+        signed-in endpoint. Progress polling (`getProgress`), the processing tracker
+        and `Skeleton` stay in `VideoDetail`, which only renders `Watch` once the
+        video is ready, so the share page never touches them.
 
 28. `frontend/src/components/ClipsPanel.tsx` (Create)
     *   **Type / Scope**: React component.
@@ -742,6 +777,15 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
         refreshes every 4 minutes, shows one "link not available" page on any failure.
         Uses hls.js with a request hook that rewrites the signed part of each URL; for
         native HLS it sets the source again and seeks to the saved position.
+    *   **Every media URL follows the refresh**, not only segments. The page keeps
+        the newest base in state and builds all URLs from it: poster
+        (`thumbs/thumb_01.jpg`), captions (`transcript.vtt`), chapter thumbnails and
+        clip thumbnails. A new base re-renders those `src` values. The captions
+        track is fetched once by the browser when playback starts, so a later
+        expiry does not drop captions; the poster only matters before playback.
+        Chapter and clip thumbnails reload with the new base, so none of them show
+        broken images after 5 minutes. `summary.json` and `transcript.json` are
+        read once on load and kept in memory.
 
 31. `frontend/src/App.tsx` (Modify)
     *   **Type / Scope**: routes.
@@ -758,8 +802,7 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
     *   **Type / Scope**: Terraform app stack.
     *   **Proposed Changes**: add an IAM policy on `api_task` allowing
         `bedrock:InvokeModel` on those two ARNs; set `BEDROCK_MODEL_ID` in the API
-        container. No NAT Gateway, no VPC endpoint. This file already has uncommitted
-        changes; review them before editing.
+        container. No NAT Gateway, no VPC endpoint.
 
 #### Documentation
 
@@ -767,13 +810,14 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
     *   **Type / Scope**: documentation.
     *   **Proposed Changes**: replace "Our code makes no AWS API calls" (the API now
         signs Bedrock calls); describe the search box scopes, Ask, clips and share
-        links; add how to run in local hybrid mode. This file already has uncommitted
-        changes.
+        links; point local hybrid mode at `backend/run-hybrid.sh` and
+        `frontend/.env.local`; remove the remaining Rekognition and labels text
+        (pipeline diagram, "Seen in the video", `labels.json`).
 
 35. `docs/walkthrough.md` (Modify)
     *   **Type / Scope**: documentation.
     *   **Proposed Changes**: add the new routes, the two tables, and the share flow.
-        This file already has uncommitted changes.
+        Remove the Rekognition branch and labels text from the pipeline sections.
 
 ### Verification Plan
 
@@ -794,7 +838,8 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
     a real browser: upload, wait for processing, type a word, press Enter to Ask and
     click a source, save a clip and play it, create a share link, open it in a second
     signed-out browser profile, check that the page has no search, Ask or delete and
-    that `labels.json` returns 404, play past 5 minutes to see the refresh, cancel the
+    that `bedrock-request.json` and `progress.json` return 404 through
+    `/api/share-files` (both files exist, so this proves the allowlist), play past 5 minutes to see the refresh, cancel the
     link and confirm that reloading shows the "link not available" page and playback
     stops within 5 minutes. Check the keyboard path and reduced-motion setting. Wake
     Aurora before the run.
