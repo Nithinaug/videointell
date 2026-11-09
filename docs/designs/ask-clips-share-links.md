@@ -36,7 +36,7 @@ deadlines?". The reader has to open several videos and look.
 
 **Sharing.** There is no way to show a video to a teammate, a teacher or a
 recruiter without giving them an account. The existing signed folder URL cannot
-be used for this: it covers the whole processed folder (labels, the Bedrock
+be used for this: it covers the whole processed folder (the Bedrock
 request, progress files), it lasts one hour so a cancelled link keeps working,
 and it stops long videos from playing after an hour.
 
@@ -65,8 +65,9 @@ signed URLs.
     a transcript line the server sent to the model, never from text the model
     wrote. If no valid source remains, the page says it could not find the answer
     in that scope. If the model call fails, the keyword matches are still shown.
-*   The API can reach Bedrock before Ask is built. If it cannot do so without a
-    new hourly-billed resource, Ask runs in a small Lambda instead.
+*   The API can reach Bedrock before Ask is built (confirmed for the laptop and
+    the ECS subnets). If a check fails, stop and re-plan; no Lambda fallback is
+    designed.
 *   A user can save a clip of at most 5 minutes from a time range or a chapter. The
     clip is a stored start and end time that plays on the existing HLS stream. The
     5-minute cap and the check that start is before end and inside the video are
@@ -188,10 +189,11 @@ Browser (owner)                          Browser (viewer, signed out)
 *   **Still to build**: a scope chip next to the box. It shows "This video" on a
     video page and "All videos" elsewhere, and the author can switch it. The
     results line names the scope instead of always saying "all your videos".
-*   `GET /api/search` takes an optional `video_id`. When it is set, only that video
-    is scanned (and must belong to the caller). The response gains `searched` (how
-    many ready videos were scanned) and `skipped` (how many were not ready), so the
-    results header can say what was searched and name the videos still processing.
+*   `GET /api/search` always scans all the caller's ready videos (a video page
+    filters its own transcript in the browser, so search needs no `video_id`). The
+    response gains `searched` (how many ready videos were scanned) and `skipped`
+    (titles of videos not ready yet), so the results line can say what was searched
+    and name the videos still processing.
 *   On a video page the already-loaded transcript is filtered in the browser, with
     no request.
 *   Search and library-wide Ask read each video's transcript through one function,
@@ -242,8 +244,7 @@ Browser (owner)                          Browser (viewer, signed out)
 *   **Gate before building**: the first task is to check that the API can reach
     Bedrock and has permission, from the laptop in local hybrid mode and from the ECS
     task role (`bedrock:InvokeModel` on the same profile and model ARNs the pipeline
-    uses), without a NAT Gateway or VPC endpoint. If it cannot, Ask moves into a small
-    Lambda with the same request and response shape.
+    uses), without a NAT Gateway or VPC endpoint. If a check fails, stop and re-plan.
 
 ### 3. Clips (saved time ranges)
 
@@ -400,7 +401,7 @@ URLs only for the segments that cover the range.
 ### Alternative H: Reuse the existing folder URL for share viewers
 
 *   **Pros**: No new route or signing scope.
-*   **Cons**: It covers the whole processed folder, including `labels.json`,
+*   **Cons**: It covers the whole processed folder, including
     `bedrock-request.json` and `progress.json`. It lasts one hour, so a cancelled link
     would keep working for up to an hour. The results route can list directories. It
     stops long videos from playing after an hour.
@@ -510,7 +511,7 @@ Build order, each stage shippable on its own:
 0.  **Prep**: move the SigV4 helpers, name the columns in `store.go`, check the
     Bedrock route.
 1.  **Scope**: the wording is shipped; this stage adds the scope chip, the
-    `video_id` search parameter, `searched` and `skipped`, the 300 ms type-ahead,
+    `searched` and `skipped` fields, the 300 ms type-ahead,
     "Keep typing..." and the 10-minute user cache in the middleware.
 2.  **Ask**.
 3.  **Clips**.
@@ -583,7 +584,7 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
     *   **Proposed Changes**: `Converse(ctx, modelID, system, user string, maxTokens int)`
         posts to `https://bedrock-runtime.<region>.amazonaws.com/model/<id>/converse`
         with a 45 second client timeout, returns the text and the `usage` token
-        counts. Maps HTTP 429 and 5xx to a typed error so callers can fall back.
+        counts. Any non-200 is returned as an error; callers fall back on any error.
 
 4.  `backend/internal/awsapi/sigv4_test.go` (Create)
     *   **Type / Scope**: Go unit test.
@@ -646,8 +647,8 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
 
 13. `backend/internal/handlers/videos.go` (Modify)
     *   **Type / Scope**: Go handler.
-    *   **Proposed Changes**: `Search` takes optional `video_id` (404 if not the
-        caller's), uses `loadTranscript`, returns `searched` and `skipped` counts.
+    *   **Proposed Changes**: `Search` uses `loadTranscript`, returns `searched`
+        (count) and `skipped` (titles). Logs each transcript it cannot read.
         Matching rule unchanged. `Delete` needs no change because the new tables
         cascade.
 
@@ -740,8 +741,8 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
 26. `frontend/src/pages/Search.tsx` (Modify)
     *   **Type / Scope**: React page.
     *   **Proposed Changes**: keep the shipped header (the query in quotes) and
-        results line; change "across all your videos" to "in this video" when scoped,
-        and add "N videos searched" from `searched`. Add a line naming videos still
+        results line, and add "N videos searched" from `searched`. The Search page is
+        always library-wide. Add a line naming videos still
         processing (from `skipped`), "Keep typing..." under 2 characters, and the
         AskCard above the results when asked. Keep the shipped empty-state text and
         append "Press Enter to ask."
@@ -819,14 +820,145 @@ GET    /api/share-files/:exp/:sig/*key  (allowlist, SHARE scope, ranges)
     *   **Proposed Changes**: add the new routes, the two tables, and the share flow.
         Remove the Rekognition branch and labels text from the pipeline sections.
 
+### Review decisions (round 1)
+
+*   **Built in stage 1, replacing the chip.** There is no scope chip. The page sets
+    the scope: on a video page the box says "Search this video" and filters that
+    transcript; everywhere else it searches all videos. With no match on a video
+    page, a "Search all videos instead" link opens `/search?q=`. Clearing the box
+    on `/search` returns to the library. Ask (stage 2) follows the same rule: on a
+    video page it asks about that video, elsewhere about all videos.
+
+These settle the implementation readiness report. Where an item above disagrees
+with this section, this section wins.
+
+*   **B2, hls.js hook.** Use a custom loader: `class ShareLoader extends
+    Hls.DefaultConfig.loader`, overriding `load(context, ...)` to set
+    `context.url = context.url.replace(/\/api\/share-files\/\d+\/[^/]+\//,
+    currentBase())`, then calling `super.load`. Pass it as `loader` (not
+    `xhrSetup`). `currentBase()` reads the newest base from a ref. The video page
+    passes no loader. Item 27's "a function that supplies the current signed base"
+    is this `currentBase`; item 30's "rewrites the signed part" is this regex.
+*   **B3, signer signature.** `func SignRequest(req *http.Request, service,
+    region string, body []byte, c Creds, now time.Time) error`. It reads the path
+    from `req.URL.EscapedPath()`.
+*   **M2, reuse.** Factor the prefix-and-verify part of `FilesHandler.Result`
+    into `func (h *FilesHandler) serveSigned(c *gin.Context, scope string, allow
+    func(key string) bool)`. `Result` calls it with `DIR` and an allow-all
+    function; `ShareFile` calls it with `SHARE` and the allowlist plus a
+    regular-file check. `shares_test` copies `TestResultScopedToVideoFolder`.
+*   **M3, store.** Column list: `const videoColumns = "id, user_id, title,
+    original_key, content_type, status, results, created_at, updated_at"`.
+    Signatures:
+    *   `CreateClip(videoID, title string, startMS, endMS int64) (models.Clip, error)`
+    *   `ListClips(videoID string) ([]models.Clip, error)`, ordered by `start_ms`
+    *   `DeleteClip(videoID, clipID string) (bool, error)`
+    *   `CreateShare(videoID, tokenHash string, expiresAt time.Time) (models.ShareLink, error)`
+    *   `ListShares(videoID string) ([]models.ShareLink, error)`, newest first
+    *   `RevokeShare(videoID, shareID string) (bool, error)`
+    *   `ShareByHash(tokenHash string) (models.Video, error)`, `sql.ErrNoRows` on
+        any miss
+
+    "Active" means `revoked_at IS NULL AND expires_at > now()`. `token_hash` is
+    the lowercase hex SHA-256 of the token. The 10-link cap is one statement, so
+    two requests cannot pass it together: `INSERT ... SELECT $1, $2, $3 WHERE
+    (SELECT count(*) FROM share_links WHERE video_id = $1 AND <active>) < 10
+    RETURNING ...`; no row means the cap was hit (`ErrTooManyShares`).
+    `CountActiveShares` is dropped. `DeleteClip` and `RevokeShare` use `WHERE id
+    = $1 AND video_id = $2` (see item 9).
+*   **M4, Ask request.** `q` is 2 to 300 characters. Converse body:
+    `{"system":[{"text":SYSTEM}],"messages":[{"role":"user","content":[{"text":USER}]}],"inferenceConfig":{"maxTokens":800,"temperature":0.2}}`.
+    Answer text is `output.message.content[0].text`; tokens are
+    `usage.inputTokens` and `usage.outputTokens`. SYSTEM: "Answer only from the
+    numbered transcript lines. Reply with JSON only: {\"answer\": string,
+    \"sources\": [line numbers]}. If the lines do not answer the question, reply
+    {\"answer\": \"\", \"sources\": []}." Strip fences with
+    `` ^```(?:json)?\s*|\s*```$ `` before parsing.
+    *   **Library scope:** take lines that contain any non-stop word of `q` (stop
+        words: a, an, and, are, did, do, does, for, how, i, in, is, it, of, on, or,
+        that, the, this, to, was, we, what, when, where, who, why, you), plus one
+        neighbour each side, dedupe by video and `from_ms`, keep transcript order,
+        and cap at 30 lines and 12,000 characters, neighbours included. With no
+        matching line, use the summaries of the 5 most recently created ready
+        videos.
+    *   **Video scope (`video_id` set):** send the whole transcript, cut at
+        `worker.MaxTranscriptChars` (exported from `maxTranscriptChars`).
+    *   The response has `truncated: true` when either cap cut the context.
+*   **M5, wiring.** `awsapi` exposes `type Converser interface {
+    Converse(ctx context.Context, system, user string) (Reply, error) }`; tests
+    use a fake. New handlers: `AskHandler{Store, Storage, AI Converser}`,
+    `ClipHandler{Store}`, `ShareHandler{Store, Storage}`. `Deps` gains `Ask`,
+    `Clips`, `Shares`; `main.go` builds them. Router: `/api/ask` gets its own group
+    with `Use(d.Auth)`; clip and share owner routes go in the existing `videos`
+    group; `/api/share-view` and `/api/share-files/*` go in a group with no auth.
+*   **M6, errors and shapes.** All errors are `{"error": "<message>"}`:
+    400 for bad input (clip range invalid or over 5 minutes, `days` not 1, 7 or 30,
+    `q` length); 404 for a missing video or one that is not the caller's; 409 for a
+    video that is not ready, and for the 11th active link. `days` is optional,
+    default 7. `matches` items have the same shape as a search hit. `POST` clips
+    returns 201 and the clip. Share `state` is `active`, `expired` or `revoked`.
+    `base` is a path relative to the API, like `results_url`; the client prefixes
+    `API_BASE_URL`. `base_expires_at` is Unix seconds. `ShareDirURL` returns
+    `(url string, exp int64)`. The share link is built in the browser as
+    `${location.origin}/share/${token}`.
+*   **M7, seeking.** `Watch` uses `forwardRef` and exposes `{ seek(seconds) }`, and
+    takes `onTime(seconds)`, called on `timeupdate`. `VideoDetail` holds the ref
+    and the current time and passes `seek` to AskCard, ClipsPanel and the
+    transcript. A changed `?t=` on the open page calls `seek` from an effect, not
+    through the one-time `started` guard. Clip playback: `Watch` takes `stopAt`;
+    on `timeupdate`, if the time reaches it, it pauses and clears `stopAt`.
+*   **M8, navigation.** On any page except a video page, typing goes to
+    `/search?q=` (push on the first change, replace after that). On a video page
+    with "This video", typing replaces `?q=` on that page and filters locally.
+    Switching the chip to "All videos" on a video page pushes `/search?q=`. Enter
+    or the Ask button adds `ask=1`, and on a video page also scopes Ask to that
+    video.
+*   **M9, stages.** Each item belongs to the stage of the feature it serves; a
+    file used by several stages is edited in each. All stages use the same
+    checks: `go build ./... && go test ./... && go vet ./...` and `npm run build
+    && npm run lint`. No per-stage commands.
+*   **M10, gate.** It runs before stage 2, in this order. Each check must pass.
+    1.  `aws freetier get-account-plan-state --region us-east-1` shows the Free
+        plan with credits left (the rule for adding a service).
+    2.  `aws bedrock list-inference-profiles --region ap-south-1` lists
+        `apac.amazon.nova-lite-v1:0`.
+    3.  With the API in hybrid mode, one `POST /api/ask` returns 200 with an answer.
+
+    The ECS check waits until the app stack is next up; if it fails then, stop and
+    re-plan. Terraform names: outputs `bedrock_profile_id`, `bedrock_profile_arn`,
+    `bedrock_model_arn` (the model ARN moves into a local in
+    `infra/stepfunctions.tf`); policy `aws_iam_role_policy.api_task_bedrock`; env
+    `BEDROCK_MODEL_ID = local.base.bedrock_profile_id`.
+*   **Nits.**
+    *   N1: add tests for the `searched`/`skipped` counts, sub cache hit and
+        expiry, `loadTranscript` on bad JSON, `ShareView` with revoked, expired,
+        not-ready and malformed tokens, the 10-link cap, delete cascading to clips
+        and links, and the clip/share ownership cases in item 9. Named pure
+        functions with tests: `SignRequest`, `escapePath`, `pickContext`,
+        `parseAnswer`, `allowShareKey`, `validClip`.
+    *   N2: wake Aurora as the first E2E step.
+    *   N3: "first rendition" means the first `#EXT-X-STREAM-INF` entry in
+        `master.m3u8`.
+    *   N4: `loadTranscript(prefix string) ([]worker.Segment, error)`, with the
+        worker's `segment` type exported as `Segment`.
+    *   N5: the sub cache is a `map` behind a `sync.Mutex`; entries older than 10
+        minutes are treated as missing and overwritten. No background sweep.
+    *   N6: the UI says "cancel", the code and API say "revoke".
+    *   N7: clip titles are 1 to 100 characters; clips are listed by start time.
+    *   N8: the prep stage checks Bedrock network reachability and IAM permission.
+    *   N9: delete confirmation: "Delete "<title>"? This removes the video, its
+        clips, its share links and its results for good."
+    *   N10: "so there is one value" means the API and pipeline read the same ARN;
+        the keyboard check covers search, Ask, clip save and share create.
+
 ### Verification Plan
 
 *   **Gate check before Ask (run by the author)**: `aws freetier
-    get-account-plan-state --region us-east-1`; a harmless Bedrock read such as
+    get-account-plan-state --region us-east-1`; a read-only Bedrock call such as
     `aws bedrock list-inference-profiles` in the target region; one test Converse
     call from the laptop through the new signer. For the ECS path, confirm the task
     role policy and that the task reaches `bedrock-runtime` with no NAT or endpoint,
-    when the stack is next up. If it cannot, Ask moves to a Lambda.
+    when the stack is next up. Pass rules and order are in "Review decisions", M10.
 *   **Compilation/Build**: `cd backend && go build ./...`; `cd frontend && npm run build`.
 *   **Unit Tests**: `cd backend && go test ./...`, which includes the new signer,
     storage, Ask, clips and share tests.

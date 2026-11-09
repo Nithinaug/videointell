@@ -178,7 +178,7 @@ function Skeleton({ videoId }: { videoId: string }) {
   )
 }
 
-function Transcript({ segments, time, onSeek }: { segments: Segment[]; time: number; onSeek: (s: number) => void }) {
+function Transcript({ segments, time, onSeek, filter }: { segments: Segment[]; time: number; onSeek: (s: number) => void; filter: string }) {
   const box = useRef<HTMLDivElement>(null)
   const activeRef = useRef<HTMLButtonElement>(null)
   const ms = time * 1000
@@ -192,11 +192,23 @@ function Transcript({ segments, time, onSeek }: { segments: Segment[]; time: num
     container.scrollTo({ top: el.offsetTop - container.clientHeight / 3, behavior: reduce ? 'auto' : 'smooth' })
   }, [active])
 
+  const terms = filter.toLowerCase().split(/\s+/).filter(Boolean)
+  const filtering = terms.join('').length >= 2
+  const shown = segments.map((s, i) => ({ s, i })).filter(({ s }) => !filtering || terms.every((t) => s.text.toLowerCase().includes(t)))
+
   if (segments.length === 0) return null
   return (
-    <Card title="Transcript">
+    <Card title={filtering ? `Transcript: ${shown.length} ${shown.length === 1 ? 'line' : 'lines'} with "${filter.trim()}"` : 'Transcript'}>
+      {filtering && shown.length === 0 && (
+        <p className="text-sm text-zinc-400">
+          Nobody says that in this video.{' '}
+          <Link to={`/search?q=${encodeURIComponent(filter.trim())}`} className="text-amber-400 hover:text-amber-300">
+            Search all videos instead
+          </Link>
+        </p>
+      )}
       <div ref={box} className="relative -mx-2 max-h-80 overflow-y-auto pr-1">
-        {segments.map((s, i) => (
+        {shown.map(({ s, i }) => (
           <button
             key={s.from_ms + s.text}
             ref={i === active ? activeRef : undefined}
@@ -215,7 +227,7 @@ function Transcript({ segments, time, onSeek }: { segments: Segment[]; time: num
   )
 }
 
-function Watch({ detail, results, startAt }: { detail: VideoDetailT; results: Results | null; startAt: number }) {
+function Watch({ detail, results, startAt, filter }: { detail: VideoDetailT; results: Results | null; startAt: number; filter: string }) {
   const ref = useRef<HTMLVideoElement>(null)
   const started = useRef(false)
   const [time, setTime] = useState(0)
@@ -285,7 +297,7 @@ function Watch({ detail, results, startAt }: { detail: VideoDetailT; results: Re
             <Card title="Summary">
               <p className="text-slate-200 leading-relaxed">{results.summary.summary || 'No speech found in this video.'}</p>
             </Card>
-            <Transcript segments={results.transcript} time={time} onSeek={seek} />
+            <Transcript segments={results.transcript} time={time} onSeek={seek} filter={filter} />
           </div>
         </>
       )}
@@ -366,7 +378,7 @@ export default function VideoDetail() {
         ) : video.status === 'failed' ? (
           <div className="glass rounded-3xl border-red-400/30 p-6 text-sm text-red-300">Processing failed.</div>
         ) : (
-          <Watch detail={detail} results={results} startAt={startAt} />
+          <Watch detail={detail} results={results} startAt={startAt} filter={params.get('q') ?? ''} />
         )}
       </div>
     </Shell>

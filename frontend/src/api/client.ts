@@ -96,9 +96,15 @@ export async function uploadFile(uploadUrl: string, file: File, contentType: str
   })
 }
 
-export async function search(q: string) {
-  const { data } = await api.get<{ results: SearchHit[] }>('/api/search', { params: { q } })
-  return data.results.map((h) => (h.results_url ? { ...h, results_url: API_BASE_URL + h.results_url } : h))
+export interface SearchResult {
+  results: SearchHit[]
+  searched: number
+  skipped: string[]
+}
+
+export async function search(q: string): Promise<SearchResult> {
+  const { data } = await api.get<SearchResult>('/api/search', { params: { q } })
+  return { ...data, results: data.results.map((h) => (h.results_url ? { ...h, results_url: API_BASE_URL + h.results_url } : h)) }
 }
 
 export async function deleteVideo(videoId: string) {

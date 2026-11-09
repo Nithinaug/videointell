@@ -1,5 +1,5 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { Link, useLocation, useMatch, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export function Aurora() {
@@ -18,18 +18,46 @@ export function Aurora() {
 export default function Shell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const [params] = useSearchParams()
+  const { pathname } = useLocation()
+  const onVideo = useMatch('/videos/:id') !== null
+  const onSearchPage = pathname === '/search'
+  const [params, setParams] = useSearchParams()
   const [q, setQ] = useState(params.get('q') ?? '')
+  const typed = useRef(false)
+
+  function go(text: string, push: boolean) {
+    const t = text.trim()
+    if (onVideo) {
+      setParams((p) => {
+        const n = new URLSearchParams(p)
+        if (t) n.set('q', t)
+        else n.delete('q')
+        return n
+      }, { replace: true })
+    } else if (!t && onSearchPage) {
+      navigate('/', { replace: true })
+    } else if (t) {
+      navigate(`/search?q=${encodeURIComponent(t)}`, { replace: onSearchPage && !push })
+    }
+  }
+
+  useEffect(() => {
+    if (!typed.current) return
+    const id = setTimeout(() => go(q, false), 300)
+    return () => clearTimeout(id)
+  }, [q])
 
   function onSearch(e: FormEvent) {
     e.preventDefault()
-    if (q.trim()) navigate(`/search?q=${encodeURIComponent(q.trim())}`)
+    go(q, false)
   }
+
+  const where = onVideo ? 'this video' : 'all your videos'
 
   return (
     <div className="relative min-h-screen overflow-x-clip bg-[#0c0c0e] text-zinc-200">
       <Aurora />
-      <header className="sticky top-0 z-20 px-4 pt-4">
+      <header className="relative z-20 px-4 pt-4">
         <nav className="glass mx-auto max-w-6xl flex items-center justify-between gap-3 rounded-2xl px-4 py-2.5">
           <Link to="/" aria-label="Home" className="flex items-center">
             <span className="grid place-items-center h-8 w-8 rounded-xl bg-gradient-to-br from-amber-500 to-amber-400 shadow-[0_0_24px_-4px_rgba(217,119,6,0.7)]">
@@ -46,11 +74,16 @@ export default function Shell({ children }: { children: ReactNode }) {
             <input
               type="search"
               value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Find a moment: type words someone said"
-              aria-label="Search the spoken words in all your videos"
-              title="Searches the transcripts of all your videos and jumps to the moment"
-              className="w-full rounded-xl border border-white/10 bg-black/30 py-2 pl-9 pr-3.5 text-sm text-white outline-none transition-colors placeholder:text-slate-500 focus:border-amber-400/60"
+              autoFocus={onSearchPage}
+              onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
+              onChange={(e) => {
+                typed.current = true
+                setQ(e.target.value)
+              }}
+              placeholder={onVideo ? 'Search this video' : 'Find a moment: type words someone said'}
+              aria-label={`Search the spoken words in ${where}`}
+              title={`Searches the transcripts of ${where} and jumps to the moment`}
+              className={`w-full rounded-xl border border-white/10 bg-black/30 py-2 pl-9 text-sm text-white outline-none transition-colors placeholder:text-slate-500 focus:border-amber-400/60 pr-3.5`}
             />
           </form>
           <div className="flex shrink-0 items-center gap-2">

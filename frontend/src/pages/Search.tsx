@@ -1,7 +1,7 @@
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { search, type SearchHit } from '../api/client'
+import { search, type SearchResult } from '../api/client'
 import Shell from '../components/Shell'
 import { clock, thumbFor } from '../lib/time'
 
@@ -26,16 +26,19 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
 export default function Search() {
   const [params] = useSearchParams()
   const q = params.get('q') ?? ''
-  const [hits, setHits] = useState<SearchHit[] | null>(null)
+  const [data, setData] = useState<SearchResult | null>(null)
+  const hits = data?.results ?? null
+  const short = q.trim().replace(/\s+/g, '').length < 2
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let stopped = false
-    setHits(null)
+    setData(null)
     setFailed(false)
+    if (short) return
     search(q)
       .then((r) => {
-        if (!stopped) setHits(r)
+        if (!stopped) setData(r)
       })
       .catch(() => {
         if (!stopped) setFailed(true)
@@ -52,10 +55,16 @@ export default function Search() {
       <h1 className="font-display text-3xl font-bold tracking-tight text-white">
         {q ? <>&ldquo;{q}&rdquo;</> : 'Search'}
       </h1>
-      <p className="mb-6 mt-1 text-sm text-zinc-400">
+      <p className="mt-1 text-sm text-zinc-400">
         Moments where this was said, across all your videos{hits && hits.length > 0 ? ` (${hits.length})` : ''}. Click one to play from there.
+        {data && ` ${data.searched} ${data.searched === 1 ? 'video' : 'videos'} searched.`}
       </p>
-      {failed ? (
+      <p className="mb-6 mt-1 text-sm text-zinc-500">
+        {data && data.skipped.length > 0 && `Still processing, not searched yet: ${data.skipped.join(', ')}.`}
+      </p>
+      {short ? (
+        <div className="glass rounded-3xl px-6 py-16 text-center text-slate-400">Keep typing...</div>
+      ) : failed ? (
         <div className="glass rounded-3xl px-6 py-16 text-center text-red-300">Search failed. Check that the API is running, then try again.</div>
       ) : hits === null ? (
         <div className="space-y-3">

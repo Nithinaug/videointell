@@ -106,7 +106,7 @@ func containsAll(text string, terms []string) bool {
 func (h *VideoHandler) Search(c *gin.Context) {
 	terms := strings.Fields(strings.ToLower(c.Query("q")))
 	if len(terms) == 0 || len(strings.Join(terms, "")) < 2 {
-		c.JSON(http.StatusOK, gin.H{"results": []searchHit{}})
+		c.JSON(http.StatusOK, gin.H{"results": []searchHit{}, "searched": 0, "skipped": []string{}})
 		return
 	}
 	videos, err := h.Store.ListVideosForUser(c.GetString("user_id"))
@@ -115,42 +115,35 @@ func (h *VideoHandler) Search(c *gin.Context) {
 		return
 	}
 	hits := []searchHit{}
+	searched, skipped := 0, []string{}
 	for _, v := range videos {
 		if v.Status != "ready" {
+			skipped = append(skipped, v.Title)
+			continue
+		}
+		searched++
+		if len(hits) == maxSearchHits {
 			continue
 		}
 		out, err := worker.OutputPrefix(v.OriginalKey)
 		if err != nil {
 			continue
 		}
-		p, err := h.Storage.Path(out + "transcript.json")
+		segments, err := h.loadTranscript(out)
 		if err != nil {
+			log.Printf("search: skip video %s: %v", v.ID, err)
 			continue
 		}
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		var t struct {
-			Segments []struct {
-				FromMS int64  `json:"from_ms"`
-				Text   string `json:"text"`
-			} `json:"segments"`
-		}
-		if json.Unmarshal(raw, &t) != nil {
-			continue
-		}
-		for _, s := range t.Segments {
+		for _, s := range segments {
 			if containsAll(s.Text, terms) {
 				hits = append(hits, searchHit{VideoID: v.ID, Title: v.Title, FromMS: s.FromMS, Text: s.Text, Results: h.Storage.DirURL(out)})
 				if len(hits) == maxSearchHits {
-					c.JSON(http.StatusOK, gin.H{"results": hits})
-					return
+					break
 				}
 			}
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"results": hits})
+	c.JSON(http.StatusOK, gin.H{"results": hits, "searched": searched, "skipped": skipped})
 }
 
 func (h *VideoHandler) Delete(c *gin.Context) {

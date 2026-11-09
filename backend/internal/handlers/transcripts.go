@@ -1,0 +1,30 @@
+package handlers
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+
+	"videointell/backend/internal/worker"
+)
+
+func (h *VideoHandler) loadTranscript(prefix string) ([]worker.Segment, error) {
+	p, err := h.Storage.Path(prefix + "transcript.json")
+	if err != nil {
+		return nil, err
+	}
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		return nil, err
+	}
+	var t struct {
+		Segments *[]worker.Segment `json:"segments"`
+	}
+	if err := json.Unmarshal(raw, &t); err != nil {
+		return nil, fmt.Errorf("transcript.json: %w", err)
+	}
+	if t.Segments == nil {
+		return nil, fmt.Errorf("transcript.json has no segments field (old format?)")
+	}
+	return *t.Segments, nil
+}

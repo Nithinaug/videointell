@@ -270,14 +270,14 @@ func Assemble(ctx context.Context, st Store, t Tools, ev Event) error {
 		return err
 	}
 
-	var segments []segment
+	var segments []Segment
 	if ev.HasAudio {
 		for _, c := range ev.Chunks {
 			local := filepath.Join(dir, "part.json")
 			if err := st.Get(ctx, fmt.Sprintf("%stranscript_%04d.json", work, c.Index), local); err != nil {
 				return err
 			}
-			var part []segment
+			var part []Segment
 			if err := readJSON(local, &part); err != nil {
 				return err
 			}
@@ -287,7 +287,7 @@ func Assemble(ctx context.Context, st Store, t Tools, ev Event) error {
 
 	transcript := map[string]any{"segments": segments}
 	if segments == nil {
-		transcript["segments"] = []segment{}
+		transcript["segments"] = []Segment{}
 	}
 	tj, _ := json.Marshal(transcript)
 	if err := putString(ctx, st, dir, outPrefix+"transcript.json", string(tj)); err != nil {
@@ -355,13 +355,13 @@ func renditionsFor(s source) []Rendition {
 	return out
 }
 
-type segment struct {
+type Segment struct {
 	FromMS int64  `json:"from_ms"`
 	ToMS   int64  `json:"to_ms"`
 	Text   string `json:"text"`
 }
 
-func transcribe(t Tools, src, dir string) ([]segment, error) {
+func transcribe(t Tools, src, dir string) ([]Segment, error) {
 	wav := filepath.Join(dir, "audio.wav")
 	if err := ffmpeg("-i", src, "-map", "0:a:0", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav); err != nil {
 		return nil, err
@@ -384,10 +384,10 @@ func transcribe(t Tools, src, dir string) ([]segment, error) {
 	if err := readJSON(base+".json", &w); err != nil {
 		return nil, fmt.Errorf("whisper output: %w", err)
 	}
-	segments := []segment{}
+	segments := []Segment{}
 	for _, s := range w.Transcription {
 		if text := strings.TrimSpace(s.Text); text != "" {
-			segments = append(segments, segment{s.Offsets.From, s.Offsets.To, text})
+			segments = append(segments, Segment{s.Offsets.From, s.Offsets.To, text})
 		}
 	}
 	return segments, nil
@@ -397,7 +397,7 @@ func clock(ms int64, sep string) string {
 	return fmt.Sprintf("%02d:%02d:%02d%s%03d", ms/3_600_000, ms/60_000%60, ms/1000%60, sep, ms%1000)
 }
 
-func vtt(segments []segment) string {
+func vtt(segments []Segment) string {
 	var b strings.Builder
 	b.WriteString("WEBVTT\n")
 	for _, s := range segments {
@@ -414,7 +414,7 @@ If the transcript is empty, reply {"summary": "", "chapters": [], "tags": []}.
 %s
 </transcript>`
 
-func bedrockRequest(segments []segment) ([]byte, error) {
+func bedrockRequest(segments []Segment) ([]byte, error) {
 	var b strings.Builder
 	for _, s := range segments {
 		fmt.Fprintf(&b, "[%s] %s\n", clock(s.FromMS, ",")[:8], s.Text)

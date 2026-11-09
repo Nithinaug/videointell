@@ -8,6 +8,8 @@ import (
 	"videointell/backend/internal/models"
 )
 
+const videoColumns = "id, user_id, title, original_key, content_type, status, results, created_at, updated_at"
+
 type Store struct {
 	db *sqlx.DB
 }
@@ -42,7 +44,7 @@ func (s *Store) CreateVideo(userID, title, originalKey, contentType string) (mod
 
 func (s *Store) ListVideosForUser(userID string) ([]models.Video, error) {
 	videos := []models.Video{}
-	err := s.db.Select(&videos, `SELECT * FROM videos WHERE user_id=$1 ORDER BY created_at DESC`, userID)
+	err := s.db.Select(&videos, `SELECT `+videoColumns+` FROM videos WHERE user_id=$1 ORDER BY created_at DESC`, userID)
 	return videos, err
 }
 
@@ -53,7 +55,7 @@ func (s *Store) DeleteVideo(id string) error {
 
 func (s *Store) GetVideo(id string) (models.Video, error) {
 	var v models.Video
-	err := s.db.Get(&v, `SELECT * FROM videos WHERE id=$1`, id)
+	err := s.db.Get(&v, `SELECT `+videoColumns+` FROM videos WHERE id=$1`, id)
 	return v, err
 }
 
