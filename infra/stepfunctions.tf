@@ -1,5 +1,16 @@
+variable "bedrock_profile" {
+  type    = string
+  default = "in.anthropic.claude-haiku-4-5-20251001-v1:0"
+}
+
 locals {
+  bedrock_profile_arn = "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.bedrock_profile}"
+  bedrock_model_id    = trimprefix(var.bedrock_profile, "in.")
+
   throttling_errors = [
+    "Bedrock.ThrottlingException",
+    "Bedrock.ServiceUnavailableException",
+    "Bedrock.ModelNotReadyException",
     "Rekognition.LimitExceededException",
     "Rekognition.ProvisionedThroughputExceededException",
     "Rekognition.ThrottlingException",
@@ -110,6 +121,34 @@ locals {
         }
         Retry = local.retry_throttling
         Catch = local.catch_all
+        Next  = "Summarize"
+      }
+
+      Summarize = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::bedrock:invokeModel"
+        Arguments = {
+          ModelId     = local.bedrock_profile_arn
+          ContentType = "application/json"
+          Input       = { S3Uri = "{% 's3://' & $bucket & '/' & $out & 'bedrock-request.json' %}" }
+        }
+        Output = "{% $parse($replace($trim($states.result.Body.content[0].text), /^```(json)?\\s*|\\s*```$/, '')) %}"
+        Retry  = local.retry_throttling
+        Catch  = local.catch_all
+        Next   = "SaveSummary"
+      }
+
+      SaveSummary = {
+        Type     = "Task"
+        Resource = "arn:aws:states:::aws-sdk:s3:putObject"
+        Arguments = {
+          Bucket      = "{% $bucket %}"
+          Key         = "{% $out & 'summary.json' %}"
+          Body        = "{% $states.input %}"
+          ContentType = "application/json"
+        }
+        Retry = local.retry_throttling
+        Catch = local.catch_all
         Next  = "NotifyReady"
       }
 
@@ -194,6 +233,15 @@ data "aws_iam_policy_document" "pipeline" {
   statement {
     actions   = ["events:PutTargets", "events:PutRule", "events:DescribeRule"]
     resources = ["arn:aws:events:${var.region}:${data.aws_caller_identity.current.account_id}:rule/StepFunctionsGetEventsForECSTaskRule"]
+  }
+
+  statement {
+    actions = ["bedrock:InvokeModel"]
+    resources = [
+      local.bedrock_profile_arn,
+      "arn:aws:bedrock:ap-south-1::foundation-model/${local.bedrock_model_id}",
+      "arn:aws:bedrock:ap-south-2::foundation-model/${local.bedrock_model_id}",
+    ]
   }
 
   statement {

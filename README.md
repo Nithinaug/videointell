@@ -1,5 +1,8 @@
 # Video Intelligence & Processing Platform
 
+> **Build it yourself:** [docs/walkthrough.md](docs/walkthrough.md) explains every
+> AWS piece, with Console click-paths and the matching Terraform.
+
 ## Problem statement
 
 Organizations and individuals generate large amounts of video content
