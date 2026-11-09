@@ -44,7 +44,7 @@ folder. That is deliberate, not accidental complexity.
 - **ECS on EC2** runs the Go API and an Nginx server for the React build on
   one Auto Scaling group.
 - **Lambda fan-out** does the heavy work: Step Functions splits each video
-  into 30-second chunks and a Distributed Map runs one Lambda per chunk
+  into 15-second chunks and a Distributed Map runs one Lambda per chunk
   (ffmpeg + whisper.cpp, up to 1,000 at once), so a long video takes about
   as long as a short one and processing never takes CPU from the API.
 - **CloudFront + WAF + Application Load Balancer** is the public entry point.
@@ -137,7 +137,7 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
         0. set_video_status(key, [uploaded] -> processing); stop if false
                                               |
         1. Parallel:
-           a. Lambda split: ffmpeg copies the upload into ~30 s chunks
+           a. Lambda split: ffmpeg copies the upload into ~15 s chunks
               (cut at keyframes, no re-encode) under work/
               Distributed Map, one Lambda per chunk (up to 1,000 at once):
               HLS ladder capped at source resolution, thumbnails every 10 s,
@@ -257,7 +257,7 @@ per GB.
 ### Scaling
 
 - **API tasks**: ECS target tracking on average CPU at 60%.
-- **Processing**: one Lambda per 30-second chunk, capped by the Map's
+- **Processing**: one Lambda per 15-second chunk, capped by the Map's
   `MaxConcurrency` (1,000) and the account's Lambda concurrency (1,000 in
   ap-south-1). Measured: the test clip took 58 s end to end, against about
   220 s with the old EC2 worker starting cold.
@@ -283,7 +283,7 @@ per GB.
   cost while the project is a demo.
 - **Max video:** 5 GiB per upload, and about 4.5 GiB in practice: the split
   Lambda keeps the upload and its chunks in its 10 GB `/tmp`.
-- **Chunk edges:** whisper hears each 30-second chunk on its own, so a word
+- **Chunk edges:** whisper hears each 15-second chunk on its own, so a word
   cut at an edge can come out wrong.
 - **Labels:** Rekognition reads only MP4 and MOV (H.264). Other formats
   (for example WebM) get an empty label list; the rest of the pipeline runs.
@@ -419,7 +419,7 @@ To do, in build order:
       group (1 `t3.small`, Mountpoint), API and Nginx on ECS; the API signs
       Aurora IAM tokens with stdlib SigV4; secrets in SSM Parameter Store
 - [x] Processing moved from the EC2 worker to Lambda fan-out: split into
-      30 s chunks, Distributed Map (up to 1,000 Lambdas), assemble;
+      15 s chunks, Distributed Map (up to 1,000 Lambdas), assemble;
       Rekognition runs on the upload in parallel; 58 s for the test clip
 - [x] Cognito user pool (Essentials tier, managed login v2, branding edited
       in the Console), PKCE sign-in in the app, API verifies ID tokens;
@@ -543,7 +543,7 @@ docker build --provenance=false -t $REPO:latest -f backend/Dockerfile.worker bac
 | Variable | Default | Description |
 |---|---|---|
 | `WHISPER_MODEL` | `/models/whisper.bin` in the image | whisper.cpp model file |
-| `CHUNK_SECONDS` | `30` (Terraform `chunk_seconds`) | Chunk length for the fan-out |
+| `CHUNK_SECONDS` | `15` (Terraform `chunk_seconds`) | Chunk length for the fan-out |
 
 Terraform variables: `max_chunk_workers` (Map concurrency, 1000),
 `worker_memory_mb` (10240; use 3008 if the account caps Lambda memory).

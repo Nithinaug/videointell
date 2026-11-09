@@ -1,6 +1,6 @@
 variable "chunk_seconds" {
   type    = number
-  default = 30
+  default = 15
 }
 
 variable "worker_memory_mb" {

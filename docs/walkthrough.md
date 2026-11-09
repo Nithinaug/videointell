@@ -824,7 +824,7 @@ chunk, so a long video finishes about as fast as a short one. Measured:
 **How the pipeline runs now:**
 
 1. `Split` (Lambda): downloads the upload, `ffmpeg -c copy -f segment` cuts
-   it into 30 s chunks at keyframes (no re-encode) and saves them under
+   it into 15 s chunks at keyframes (no re-encode) and saves them under
    `work/` (deleted by an S3 lifecycle rule after one day).
 2. `Chunks` (Distributed Map, up to 1,000 at once, child workflows of type
    STANDARD so a slow chunk is not cut at 5 minutes): one Lambda per chunk
@@ -849,7 +849,7 @@ video at 10 GB, estimate).
 
 - **Lambda** -> **Create function** -> **Container image**, the
   `videointell-worker` image, x86_64; **Configuration** -> memory 10240 MB,
-  ephemeral storage 10240 MB, timeout 15 min, env `CHUNK_SECONDS=30`.
+  ephemeral storage 10240 MB, timeout 15 min, env `CHUNK_SECONDS=15`.
 - **Step Functions**: in Workflow Studio, a **Parallel** state with a
   **Map** state set to **Distributed**, child execution type **Standard**,
   max concurrency 1000.
