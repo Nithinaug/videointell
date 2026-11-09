@@ -16,6 +16,7 @@ import (
 	"videointell/backend/internal/models"
 	"videointell/backend/internal/storage"
 	"videointell/backend/internal/store"
+	"videointell/backend/internal/worker"
 )
 
 type VideoHandler struct {
@@ -80,6 +81,9 @@ func (h *VideoHandler) Detail(c *gin.Context) {
 	detail := models.VideoDetail{Video: video}
 	if video.Status != "uploading" {
 		detail.URL = h.Storage.PlaybackURL(video.OriginalKey)
+		if prefix, err := worker.OutputPrefix(video.OriginalKey); err == nil {
+			detail.ResultsURL = h.Storage.DirURL(prefix)
+		}
 	}
 
 	c.JSON(http.StatusOK, detail)
@@ -153,4 +157,24 @@ func (h *FilesHandler) File(c *gin.Context) {
 		return
 	}
 	c.File(path)
+}
+
+func (h *FilesHandler) Result(c *gin.Context) {
+	key := path.Clean(strings.TrimPrefix(c.Param("key"), "/"))
+	parts := strings.SplitN(key, "/", 4)
+	if len(parts) < 4 || parts[0] != "processed" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	prefix := strings.Join(parts[:3], "/") + "/"
+	if err := h.Storage.Verify("DIR", prefix, c.Param("exp"), c.Param("sig")); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	file, err := h.Storage.Path(key)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	c.File(file)
 }

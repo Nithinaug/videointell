@@ -43,6 +43,11 @@ func (l *LocalStorage) PlaybackURL(key string) string {
 	return l.signedURL("GET", key, time.Now().Add(playbackURLTTL))
 }
 
+func (l *LocalStorage) DirURL(prefix string) string {
+	exp := time.Now().Add(playbackURLTTL).Unix()
+	return fmt.Sprintf("/api/results/%d/%s/%s", exp, l.sign("DIR", prefix, exp), (&url.URL{Path: prefix}).EscapedPath())
+}
+
 func (l *LocalStorage) Verify(method, key, exp, sig string) error {
 	expUnix, err := strconv.ParseInt(exp, 10, 64)
 	if err != nil || time.Now().Unix() > expUnix {

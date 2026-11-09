@@ -374,6 +374,9 @@ Done:
       3.5 min from a cold start, about 40 s when an instance is already up
 - [x] Bedrock step: Nova Lite reads the worker's request from S3 and
       `summary.json` (summary, chapters, tags) is saved; run on AWS end to end
+- [x] Results page: HLS player with poster and captions, summary, chapters
+      that follow playback, tags, labels; files served through one signed
+      results-folder URL (`/api/results/<exp>/<sig>/processed/...`)
 
 To do, in build order:
 - [ ] Terraform: VPC, ALB, EC2 Auto Scaling groups (Mountpoint), ECS, Aurora

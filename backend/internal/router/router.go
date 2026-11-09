@@ -26,6 +26,7 @@ func New(d Deps) *gin.Engine {
 
 		api.PUT("/files/*key", d.Files.Upload)
 		api.GET("/files/*key", d.Files.File)
+		api.GET("/results/:exp/:sig/*key", d.Files.Result)
 
 		videos := api.Group("/videos")
 		videos.Use(handlers.AuthMiddleware(d.JWTSecret))

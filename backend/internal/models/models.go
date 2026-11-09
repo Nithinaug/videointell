@@ -26,6 +26,7 @@ type Video struct {
 }
 
 type VideoDetail struct {
-	Video Video  `json:"video"`
-	URL   string `json:"url,omitempty"`
+	Video      Video  `json:"video"`
+	URL        string `json:"url,omitempty"`
+	ResultsURL string `json:"results_url,omitempty"`
 }

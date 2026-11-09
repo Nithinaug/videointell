@@ -20,7 +20,7 @@ way to check it works. Sections are added as each build step is finished.
 | Foundation | 0-3 | Done |
 | Step 1: worker on AWS | 4-10 | Done |
 | Step 2: Bedrock summary | 11 | Done |
-| Step 3: results page | - | Not started |
+| Step 3: results page | 12 | Done |
 | Steps 4-8 | - | Not started |
 
 ## The big picture
@@ -677,3 +677,50 @@ first:
 aws s3 rm --recursive s3://<bucket>/processed/u1/1-test.mp4/
 aws s3api put-object --bucket <bucket> --key uploads/u1/1-test.mp4.done
 ```
+
+---
+
+## 12. Results page (step 3)
+
+**What:** the video page plays the HLS stream and shows the summary,
+chapters, tags and Rekognition labels. No AWS setup in this step: it is
+app code only (Go API and React).
+
+**How the files reach the browser:**
+
+1. The video detail call (`GET /api/videos/:id`) returns `results_url`:
+   `/api/results/<exp>/<sig>/processed/<user>/<file>/`. The signature
+   covers the whole results folder of that one video and lasts one hour.
+2. The signature sits in the path, not in `?sig=`, because the HLS
+   playlists point at their segments with relative links. A relative link
+   keeps the path but drops the query, so a path signature still works on
+   every segment.
+3. `GET /api/results/...` cleans the path, takes the first three parts
+   (`processed/<user>/<file>/`) as the folder, checks the signature for
+   that folder, and serves the file. `..` cannot leave the folder, and a
+   signature for one video does not open another.
+4. The page reads `summary.json` and `labels.json` from that folder. Until
+   they exist it shows a shimmer and asks again every 10 seconds, playing
+   the original upload meanwhile. Once they exist it plays
+   `hls/master.m3u8` (hls.js where the browser cannot play HLS itself),
+   uses `thumbs/thumb_01.jpg` as the poster and `transcript.vtt` as
+   captions.
+
+**Layout:** a dark "cinema" page: the player on a soft glow made from a
+blurred poster, a chapter strip below it (one thumbnail card per chapter,
+picked from the 10-second thumbnails), then summary, tags and labels cards.
+
+**Motion:** the chapter matching the play position is highlighted, its
+progress bar fills as it plays, and it is scrolled into view; clicking a
+chapter jumps there. Results fade in after
+the shimmer. Both turn off under reduced motion.
+
+**Later:** in step 7 CloudFront signed cookies replace the path signature,
+and in step 4 the status badge starts showing `processing` and `ready`.
+
+### Check it
+
+Run the API and frontend (section 1), open a video that has
+`processed/<user>/<file>/summary.json`, then click a chapter: the player
+jumps and the chapter is highlighted. `go test ./internal/handlers/` checks
+that the results route refuses other folders and `..`.

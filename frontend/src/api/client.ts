@@ -31,6 +31,18 @@ export interface Video {
 export interface VideoDetail {
   video: Video
   url?: string
+  results_url?: string
+}
+
+export interface Summary {
+  summary: string
+  chapters: { start: string; title: string }[]
+  tags: string[]
+}
+
+export interface Results {
+  summary: Summary
+  labels: string[]
 }
 
 export async function register(email: string, password: string) {
@@ -64,5 +76,18 @@ export async function uploadFile(uploadUrl: string, file: File, contentType: str
 export async function getVideoDetail(videoId: string) {
   const { data } = await api.get<VideoDetail>(`/api/videos/${videoId}`)
   if (data.url) data.url = API_BASE_URL + data.url
+  if (data.results_url) data.results_url = API_BASE_URL + data.results_url
   return data
+}
+
+export async function getResults(resultsUrl: string): Promise<Results | null> {
+  try {
+    const [summary, labels] = await Promise.all([
+      axios.get<Summary>(resultsUrl + 'summary.json'),
+      axios.get<string[]>(resultsUrl + 'labels.json'),
+    ])
+    return { summary: summary.data, labels: labels.data }
+  } catch {
+    return null
+  }
 }

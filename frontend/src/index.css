@@ -8,3 +8,27 @@ body {
   color: #e2e8f0;
   -webkit-font-smoothing: antialiased;
 }
+
+.shimmer {
+  background: linear-gradient(90deg, #131c27 0%, #1e2d3d 50%, #131c27 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.fade-in {
+  animation: fade-in 300ms ease-out both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer, .fade-in { animation: none; }
+}
