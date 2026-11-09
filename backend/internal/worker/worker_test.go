@@ -99,7 +99,7 @@ func TestRunEndToEnd(t *testing.T) {
 
 	raw, _ := os.ReadFile(filepath.Join(out, "bedrock-request.json"))
 	var body struct {
-		Version  string `json:"anthropic_version"`
+		Config   struct{ MaxTokens int } `json:"inferenceConfig"`
 		Messages []struct {
 			Content []struct{ Text string } `json:"content"`
 		} `json:"messages"`
@@ -107,7 +107,7 @@ func TestRunEndToEnd(t *testing.T) {
 	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatalf("bedrock-request.json: %v", err)
 	}
-	if body.Version != "bedrock-2023-05-31" || !strings.Contains(body.Messages[0].Content[0].Text, "[00:00:01] hello from the test") {
+	if body.Config.MaxTokens == 0 || !strings.Contains(body.Messages[0].Content[0].Text, "[00:00:01] hello from the test") {
 		t.Errorf("bedrock request: %s", raw)
 	}
 

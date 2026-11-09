@@ -19,7 +19,7 @@ way to check it works. Sections are added as each build step is finished.
 |---|---|---|
 | Foundation | 0-3 | Done |
 | Step 1: worker on AWS | 4-10 | Done |
-| Step 2: Bedrock summary | 11 | In progress (waiting on the Anthropic use case form) |
+| Step 2: Bedrock summary | 11 | Done |
 | Step 3: results page | - | Not started |
 | Steps 4-8 | - | Not started |
 
@@ -31,7 +31,7 @@ browser -> API (Go) -> writes video to a folder that is really S3 (Mountpoint)
 S3 "Object Created" for *.done -> EventBridge rule -> Step Functions pipeline:
    1. ECS task on an EC2 instance: Go worker runs ffmpeg + whisper.cpp
    2. Rekognition finds labels in the video
-   3. Bedrock (Claude) writes a summary, chapters and tags
+   3. Bedrock (Nova Lite) writes a summary, chapters and tags
    4. SNS sends an email
 ```
 
@@ -610,41 +610,45 @@ is already running. Results appear under `processed/u1/1-test.mp4/`:
 
 ---
 
-## 11. Bedrock summary (step 2, in progress)
+## 11. Bedrock summary (step 2)
 
-**What:** Claude Haiku 4.5 reads the transcript and returns a summary,
+**What:** Amazon Nova Lite reads the transcript and returns a summary,
 chapters with start times, and tags, saved as `summary.json`.
 
 **How the data flows:**
 
-1. The worker writes `bedrock-request.json`: the Anthropic Messages request
-   with the timestamped transcript and instructions to reply with only
-   JSON.
+1. The worker writes `bedrock-request.json`: a Nova request (`messages`
+   plus `inferenceConfig`) with the timestamped transcript and
+   instructions to reply with only JSON.
 2. The `Summarize` state calls Bedrock with `Input.S3Uri` pointing at that
    file, so a long transcript never passes through the 256 KB state.
-3. The reply is small, so it comes back into the state. JSONata trims it,
-   removes any code fences, and parses the JSON with `$parse`.
+3. The reply is small, so it comes back into the state. JSONata reads
+   `output.message.content[0].text`, trims it, removes any code fences,
+   and parses the JSON with `$parse`.
 4. `SaveSummary` writes it to `summary.json`.
 
-**Model:** the inference profile `in.anthropic.claude-haiku-4-5-20251001-v1:0`.
-The `in.` profile keeps requests inside India (Mumbai `ap-south-1` and
-Hyderabad `ap-south-2`). The pipeline role may call `bedrock:InvokeModel`
-on that profile and on the model in those two regions only.
+**Model:** the inference profile `apac.amazon.nova-lite-v1:0`. It routes
+requests across six Asia Pacific regions, so the pipeline role may call
+`bedrock:InvokeModel` on that profile and on the Nova Lite model in any
+region (the model is pinned, the region is `*`).
+
+**Why not Claude:** Anthropic models on Bedrock are sold through AWS
+Marketplace and need a payment method on the account. On the Free plan
+the Marketplace agreement is created and then terminated within seconds
+(AWS sends an "agreement expired" mail), and calls fail with
+`INVALID_PAYMENT_INSTRUMENT`. Nova is Amazon's own model, has no
+Marketplace agreement, and is paid from Free plan credits.
 
 ### Console
 
 1. **Check Bedrock works on your plan** with one tiny call:
 
    ```bash
-   echo '{"anthropic_version":"bedrock-2023-05-31","max_tokens":20,"messages":[{"role":"user","content":[{"type":"text","text":"Reply with the word ok."}]}]}' > ok.json
-   aws bedrock-runtime invoke-model --region ap-south-1 --model-id in.anthropic.claude-haiku-4-5-20251001-v1:0 --content-type application/json --body fileb://ok.json out.json && cat out.json
+   echo '{"messages":[{"role":"user","content":[{"text":"Reply with the word ok."}]}],"inferenceConfig":{"maxTokens":20}}' > ok.json
+   aws bedrock-runtime invoke-model --region ap-south-1 --model-id apac.amazon.nova-lite-v1:0 --content-type application/json --body fileb://ok.json out.json && cat out.json
    ```
 
-2. **Anthropic use case form (one time per account):** **Amazon Bedrock**
-   (region ap-south-1) -> **Model catalog** -> **Claude Haiku 4.5** ->
-   **Submit use case details**. Fill in a short description of your use.
-   It can take about 15 minutes to apply. Until then, calls from Step
-   Functions fail with `Model use case details have not been submitted`.
+2. No model access form is needed for Nova.
 3. Add `bedrock:InvokeModel` to the pipeline role (section 10).
 
 ### Terraform
@@ -654,5 +658,22 @@ and `SaveSummary` states, and the Bedrock statement in the role.
 
 ### Check it
 
-*To be filled in once the use case form is approved and a run writes
-`summary.json`.*
+Run the pipeline (section 10), then:
+
+```bash
+aws s3 cp s3://<bucket>/processed/u1/1-test.mp4/summary.json -
+```
+
+The test video has no speech, so the result is
+`{"summary":"","chapters":[],"tags":[]}`. A video with speech fills all
+three fields. The run status is SUCCEEDED, and the graph view shows
+`Summarize` and `SaveSummary` in green.
+
+Rerunning the same video fails in `ProcessVideo` with `file exists`: the
+worker never overwrites files under `processed/`. Delete the old results
+first:
+
+```bash
+aws s3 rm --recursive s3://<bucket>/processed/u1/1-test.mp4/
+aws s3api put-object --bucket <bucket> --key uploads/u1/1-test.mp4.done
+```

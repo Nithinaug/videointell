@@ -1,11 +1,11 @@
 variable "bedrock_profile" {
   type    = string
-  default = "in.anthropic.claude-haiku-4-5-20251001-v1:0"
+  default = "apac.amazon.nova-lite-v1:0"
 }
 
 locals {
   bedrock_profile_arn = "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.bedrock_profile}"
-  bedrock_model_id    = trimprefix(var.bedrock_profile, "in.")
+  bedrock_model_id    = replace(var.bedrock_profile, "/^[a-z]+\\./", "")
 
   throttling_errors = [
     "Bedrock.ThrottlingException",
@@ -132,7 +132,7 @@ locals {
           ContentType = "application/json"
           Input       = { S3Uri = "{% 's3://' & $bucket & '/' & $out & 'bedrock-request.json' %}" }
         }
-        Output = "{% $parse($replace($trim($states.result.Body.content[0].text), /^```(json)?\\s*|\\s*```$/, '')) %}"
+        Output = "{% $parse($replace($trim($states.result.Body.output.message.content[0].text), /^```(json)?\\s*|\\s*```$/, '')) %}"
         Retry  = local.retry_throttling
         Catch  = local.catch_all
         Next   = "SaveSummary"
@@ -239,8 +239,7 @@ data "aws_iam_policy_document" "pipeline" {
     actions = ["bedrock:InvokeModel"]
     resources = [
       local.bedrock_profile_arn,
-      "arn:aws:bedrock:ap-south-1::foundation-model/${local.bedrock_model_id}",
-      "arn:aws:bedrock:ap-south-2::foundation-model/${local.bedrock_model_id}",
+      "arn:aws:bedrock:*::foundation-model/${local.bedrock_model_id}",
     ]
   }
 

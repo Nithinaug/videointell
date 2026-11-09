@@ -252,12 +252,11 @@ func makeBedrockRequest(work string) error {
 	}
 
 	body := map[string]any{
-		"anthropic_version": "bedrock-2023-05-31",
-		"max_tokens":        2000,
 		"messages": []map[string]any{{
 			"role":    "user",
-			"content": []map[string]string{{"type": "text", "text": fmt.Sprintf(bedrockPrompt, text)}},
+			"content": []map[string]string{{"text": fmt.Sprintf(bedrockPrompt, text)}},
 		}},
+		"inferenceConfig": map[string]any{"maxTokens": 2000},
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {

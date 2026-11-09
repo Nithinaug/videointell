@@ -264,8 +264,9 @@ per GB.
   images. Accepted for cost.
 - **Max video:** 5 GiB per upload. whisper.cpp on CPU takes roughly as long
   as the video or longer, so a long video takes a long time to be `ready`.
-- **Bedrock on the Free plan** has not been checked yet; if it is blocked,
-  the summary step waits for a plan upgrade.
+- **Bedrock on the Free plan:** Claude models are sold through AWS
+  Marketplace and fail without a payment method, so the summary uses
+  Amazon Nova Lite (`apac.amazon.nova-lite-v1:0`).
 - **Retention:** the `expire-test-uploads` rule deletes `uploads/` after
   3 days. That is a test setting. Playback after `ready` comes from
   `processed/`, so expiry only blocks re-processing an old video.
@@ -371,11 +372,13 @@ Done:
 - [x] Worker image pushed; pipeline run on AWS end to end (`.done` marker ->
       worker on a fresh instance -> Rekognition -> `labels.json`): about
       3.5 min from a cold start, about 40 s when an instance is already up
+- [x] Bedrock step: Nova Lite reads the worker's request from S3 and
+      `summary.json` (summary, chapters, tags) is saved; run on AWS end to end
 
 To do, in build order:
 - [ ] Terraform: VPC, ALB, EC2 Auto Scaling groups (Mountpoint), ECS, Aurora
       with Data API
-- [ ] Pipeline: add `set_video_status`, the worker task and Bedrock; run
+- [ ] Pipeline: add `set_video_status`; run
       Rekognition on the worker's MP4
 - [ ] Replace JWT auth with Cognito on the ALB and the identity middleware
 - [ ] Terraform: CloudFront, WAF, Route 53, Cognito, alarms, CloudTrail;
