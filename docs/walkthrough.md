@@ -23,7 +23,8 @@ way to check it works. Sections are added as each build step is finished.
 | Step 3: results page | 12 | Done |
 | Step 4: Aurora and video status | 13 | Done |
 | Step 5: app on ECS, Lambda fan-out | 14 | Done |
-| Steps 6-8 | - | Not started |
+| Step 6: Cognito sign-in | 15 | Done (CloudFront waiting on AWS verification) |
+| Steps 7-8 | - | Not started |
 
 ## The big picture
 
@@ -882,3 +883,70 @@ aws stepfunctions list-executions --region ap-south-1 --state-machine-arn <pipel
 **Limits:** whisper hears each chunk on its own, so a word cut at a chunk
 edge can come out wrong. The split Lambda keeps the upload and its chunks
 in its 10 GB `/tmp`, so uploads above about 4.5 GB fail there.
+
+---
+
+## 15. Cognito sign-in (step 6)
+
+**What:** a Cognito user pool with managed login. The app sends users to
+Cognito's hosted page, gets an ID token back, and sends it to the API,
+which checks it.
+
+**Why not on the ALB:** the ALB's `authenticate-cognito` action only works
+on an HTTPS listener, which needs a certificate for a domain you own. With
+no domain, sign-in moves into the app, and HTTPS comes from CloudFront's
+`*.cloudfront.net` address. Cognito allows `http://localhost` callbacks,
+so local development works without HTTPS.
+
+**How it works:**
+
+1. `src/auth.ts` makes a random PKCE verifier, sends its SHA-256 (the
+   challenge) to `/oauth2/authorize`, and keeps the verifier in
+   `sessionStorage` with a random `state`.
+2. Cognito sends the browser back to `/auth/callback?code=...&state=...`.
+   The page checks `state` and swaps the code plus verifier for tokens at
+   `/oauth2/token`.
+3. The ID token (60 minutes) goes in `localStorage`; every API call sends
+   it as `Authorization: Bearer`. A 401 sends the user through sign-in
+   again (usually instant: Cognito remembers the session).
+4. The API (`internal/cognito`) checks the RS256 signature against the
+   pool's JWKS, the issuer, the audience, `token_use = id` and expiry,
+   then finds or creates the user row by email (`cognito_sub` is saved).
+
+### Console
+
+1. **Cognito** -> **Create user pool** -> **Single-page application**,
+   sign-in with **Email**, self sign-up on. Return URL
+   `http://localhost:5173/auth/callback`.
+2. **App clients** -> the client -> **Login pages**: scopes `openid`,
+   `email`; grant type **Authorization code**; no client secret.
+3. **Domain**: a Cognito prefix domain, managed login (version 2).
+4. **Managed login** -> **Styles** -> edit: dark mode, page background
+   `#07090c`, form `#0f141b`, primary button `#38bdf8`.
+
+### Terraform
+
+`infra/cognito.tf`: user pool (Essentials tier, email sign-in, 12
+character passwords, deletion protection on), domain, the `web` app client
+(callbacks for localhost and, when on, CloudFront) and a branding resource
+that ignores later Console edits.
+
+`infra/cloudfront.tf`: the distribution (HTTPS on `*.cloudfront.net`,
+`/assets/*` cached, everything else passed to the ALB uncached). It is
+behind `cloudfront_enabled` (default `false`) because new accounts must
+ask AWS Support to verify them before creating CloudFront resources. The
+ALB accepts traffic only from CloudFront's managed prefix list.
+
+### Check it
+
+```bash
+cd backend && COGNITO_USER_POOL_ID="$(terraform -chdir=../infra output -raw cognito_user_pool_id)" \
+  COGNITO_CLIENT_ID="$(terraform -chdir=../infra output -raw cognito_client_id)" go run ./cmd/server
+cd frontend && VITE_COGNITO_DOMAIN="$(terraform -chdir=../infra output -raw cognito_domain)" \
+  VITE_COGNITO_CLIENT_ID="$(terraform -chdir=../infra output -raw cognito_client_id)" npm run dev
+```
+
+Open `http://localhost:5173`, create an account, enter the emailed code:
+the dashboard loads. `go test ./internal/cognito/` checks that tokens with
+the wrong audience, issuer, `token_use`, signing key, or an old expiry are
+refused.

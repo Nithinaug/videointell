@@ -61,3 +61,19 @@ output "api_repository" {
 output "web_repository" {
   value = aws_ecr_repository.app["web"].repository_url
 }
+
+output "app_url" {
+  value = one([for d in aws_cloudfront_distribution.app : "https://${d.domain_name}"])
+}
+
+output "cognito_user_pool_id" {
+  value = aws_cognito_user_pool.main.id
+}
+
+output "cognito_client_id" {
+  value = aws_cognito_user_pool_client.web.id
+}
+
+output "cognito_domain" {
+  value = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.region}.amazoncognito.com"
+}

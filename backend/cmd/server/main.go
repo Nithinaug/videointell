@@ -4,6 +4,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"log"
 
+	"videointell/backend/internal/cognito"
 	"videointell/backend/internal/config"
 	"videointell/backend/internal/db"
 	"videointell/backend/internal/handlers"
@@ -30,7 +31,10 @@ func main() {
 	}
 	st := store.New(dbx)
 
-	authHandler := &handlers.AuthHandler{Store: st, JWTSecret: cfg.JWTSecret}
+	if cfg.CognitoPool == "" || cfg.CognitoApp == "" {
+		log.Fatal("COGNITO_USER_POOL_ID and COGNITO_CLIENT_ID are required")
+	}
+	verifier := cognito.NewVerifier(cfg.AWSRegion, cfg.CognitoPool, cfg.CognitoApp)
 	if cfg.RequireMount {
 		if err := storage.CheckMount(cfg.LocalDataDir); err != nil {
 			log.Fatalf("storage: %v", err)
@@ -42,10 +46,9 @@ func main() {
 	log.Printf("storage: %s", cfg.LocalDataDir)
 
 	r := router.New(router.Deps{
-		AuthHandler:  authHandler,
 		VideoHandler: videoHandler,
 		Files:        files,
-		JWTSecret:    cfg.JWTSecret,
+		Auth:         handlers.AuthMiddleware(verifier, st),
 	})
 
 	log.Printf("video-intell API listening on :%s", cfg.Port)

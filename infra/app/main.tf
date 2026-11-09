@@ -49,6 +49,6 @@ variable "image_tag" {
 
 data "aws_caller_identity" "current" {}
 
-output "url" {
-  value = "http://${aws_lb.main.dns_name}"
+output "alb_dns" {
+  value = aws_lb.main.dns_name
 }

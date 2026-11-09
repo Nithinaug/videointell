@@ -7,10 +7,9 @@ import (
 )
 
 type Deps struct {
-	AuthHandler  *handlers.AuthHandler
 	VideoHandler *handlers.VideoHandler
 	Files        *handlers.FilesHandler
-	JWTSecret    string
+	Auth         gin.HandlerFunc
 }
 
 func New(d Deps) *gin.Engine {
@@ -21,15 +20,13 @@ func New(d Deps) *gin.Engine {
 
 	api := r.Group("/api")
 	{
-		api.POST("/auth/register", d.AuthHandler.Register)
-		api.POST("/auth/login", d.AuthHandler.Login)
 
 		api.PUT("/files/*key", d.Files.Upload)
 		api.GET("/files/*key", d.Files.File)
 		api.GET("/results/:exp/:sig/*key", d.Files.Result)
 
 		videos := api.Group("/videos")
-		videos.Use(handlers.AuthMiddleware(d.JWTSecret))
+		videos.Use(d.Auth)
 		{
 			videos.POST("", d.VideoHandler.Create)
 			videos.GET("", d.VideoHandler.List)

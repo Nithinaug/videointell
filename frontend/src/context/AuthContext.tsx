@@ -1,51 +1,44 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
-import * as apiClient from '../api/client'
-import type { User } from '../api/client'
+import { logoutUrl } from '../auth'
+
+interface AuthUser {
+  email: string
+}
 
 interface AuthContextValue {
-  user: User | null
+  user: AuthUser | null
   token: string | null
-  login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string) => Promise<void>
+  signIn: (token: string, email: string) => void
   logout: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
+export function clearSession() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
-  const [user, setUser] = useState<User | null>(() => {
+  const [user, setUser] = useState<AuthUser | null>(() => {
     const raw = localStorage.getItem('user')
     return raw ? JSON.parse(raw) : null
   })
 
-  function persist(token: string, user: User) {
+  function signIn(token: string, email: string) {
     localStorage.setItem('token', token)
-    localStorage.setItem('user', JSON.stringify(user))
+    localStorage.setItem('user', JSON.stringify({ email }))
     setToken(token)
-    setUser(user)
-  }
-
-  async function login(email: string, password: string) {
-    const data = await apiClient.login(email, password)
-    persist(data.token, data.user)
-  }
-
-  async function register(email: string, password: string) {
-    const data = await apiClient.register(email, password)
-    persist(data.token, data.user)
+    setUser({ email })
   }
 
   function logout() {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    setToken(null)
-    setUser(null)
+    clearSession()
+    location.assign(logoutUrl())
   }
 
-  return (
-    <AuthContext.Provider value={{ user, token, login, register, logout }}>{children}</AuthContext.Provider>
-  )
+  return <AuthContext.Provider value={{ user, token, signIn, logout }}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {

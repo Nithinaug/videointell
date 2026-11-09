@@ -6,23 +6,28 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"videointell/backend/internal/auth"
+	"videointell/backend/internal/cognito"
+	"videointell/backend/internal/store"
 )
 
-func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
+func AuthMiddleware(v *cognito.Verifier, st *store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if !strings.HasPrefix(header, "Bearer ") {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing bearer token"})
 			return
 		}
-		token := strings.TrimPrefix(header, "Bearer ")
-		claims, err := auth.ParseToken(jwtSecret, token)
+		id, err := v.Verify(strings.TrimPrefix(header, "Bearer "))
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
-		c.Set("user_id", claims.UserID)
+		userID, err := st.UpsertCognitoUser(id.Sub, id.Email)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "user lookup failed"})
+			return
+		}
+		c.Set("user_id", userID)
 		c.Next()
 	}
 }

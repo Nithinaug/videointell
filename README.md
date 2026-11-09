@@ -48,8 +48,8 @@ folder. That is deliberate, not accidental complexity.
   (ffmpeg + whisper.cpp, up to 1,000 at once), so a long video takes about
   as long as a short one and processing never takes CPU from the API.
 - **CloudFront + WAF + Application Load Balancer** is the public entry point.
-  The ALB signs users in with **Amazon Cognito**; the API checks the identity
-  header the ALB adds.
+  Users sign in with **Amazon Cognito** managed login (OAuth code flow with
+  PKCE in the browser); the API checks Cognito's ID token itself.
 - **Mountpoint for Amazon S3** mounts the video bucket on each EC2 host, so
   the API saves uploads as plain files and they land in S3.
 - **EventBridge + Step Functions** turn each finished upload into a pipeline:
@@ -78,7 +78,7 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
 |---|---|---|
 | API compute | Lambda (container images) | Go API container on EC2 (ECS, EC2 launch type) |
 | Public entry, throttling | API Gateway HTTP API | CloudFront + ALB + AWS WAF rate rule |
-| Auth | Cognito in the app | Cognito on the ALB listener |
+| Auth | Cognito in the app | Cognito managed login in the app (PKCE); the API verifies the ID token |
 | Heavy work | Step Functions Distributed Map on Lambda | The same: Distributed Map of Go Lambda workers (ffmpeg, whisper.cpp), plus Rekognition and Bedrock |
 | Long-running jobs | ECS Fargate | ECS on an EC2 Auto Scaling group |
 | Database | DynamoDB (TTL expiry) | Aurora PostgreSQL (provisioned) |
@@ -159,7 +159,8 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
 
 ### Video processing workflow
 
-1. The user signs in through Cognito on the ALB.
+1. The user signs in on Cognito's managed login page and comes back with an
+   ID token.
 2. The browser calls `POST /api/videos`. The API inserts a video row with
    status `uploading` and returns a signed upload URL.
 3. The browser PUTs the file to `/api/files/...`. The API writes it to
@@ -197,10 +198,15 @@ unknown key changes nothing.
 
 ### Identity and playback
 
-- **Sign-in:** the ALB runs the Cognito login and adds an
-  `x-amzn-oidc-data` header to each request. A small API middleware verifies
-  the header's ES256 signature with the ALB public key, downloaded over HTTPS
-  from the regional ALB key endpoint, and reads the user ID from it.
+- **Sign-in:** the React app sends the user to Cognito's managed login page
+  (OAuth authorization code flow with PKCE, made with the browser's Web
+  Crypto) and swaps the code for tokens at Cognito's token endpoint. It
+  sends the ID token as a bearer token. The API checks the RS256 signature
+  against Cognito's public keys (downloaded over HTTPS, not an SDK call),
+  the issuer, the audience (the app client), `token_use = id` and expiry,
+  then finds or creates the user row by email. Why not the ALB's
+  `authenticate-cognito`: it needs an HTTPS listener, which needs a domain
+  the project does not own.
 - **No bypass:** the ALB security group accepts traffic only from the
   CloudFront origin-facing prefix list, so requests cannot skip WAF.
 - **Uploads:** `PUT /api/files/...` with an HMAC-signed, 15-minute URL, on
@@ -333,8 +339,8 @@ checks such as reading a state machine run.
 | Update video status | Step Functions -> RDS Data API -> `set_video_status` | State machine definition |
 | Send email | Step Functions -> SNS | State machine definition |
 | Read secrets | ECS injects Secrets Manager values as env vars | Task definition |
-| Sign-in | ALB `authenticate-cognito` action | ALB listener rule |
-| Check who the user is | API downloads the ALB public key over HTTPS (not an SDK call) | API middleware |
+| Sign-in | Cognito managed login, OAuth code flow with PKCE | React app (`src/auth.ts`) |
+| Check who the user is | API downloads Cognito's JWKS over HTTPS (not an SDK call) | API middleware (`internal/cognito`) |
 | Private playback | CloudFront checks the signed cookie | CloudFront key group |
 
 No SDK, CDK or SAM is used in this repository.
@@ -391,8 +397,12 @@ To do, in build order:
 - [x] Processing moved from the EC2 worker to Lambda fan-out: split into
       30 s chunks, Distributed Map (up to 1,000 Lambdas), assemble;
       Rekognition runs on the upload in parallel; 58 s for the test clip
-- [ ] Replace JWT auth with Cognito on the ALB and the identity middleware
-- [ ] Terraform: CloudFront, WAF, Route 53, Cognito, alarms, CloudTrail;
+- [x] Cognito user pool (Essentials tier, managed login v2, branding edited
+      in the Console), PKCE sign-in in the app, API verifies ID tokens;
+      password login removed; tested locally against the real pool
+- [ ] CloudFront in front of the ALB (written, behind `cloudfront_enabled`;
+      waiting for AWS to verify the account for CloudFront)
+- [ ] Terraform: WAF, alarms, CloudTrail;
       playback cookie endpoint
 
 ## How this is being built
@@ -416,7 +426,7 @@ backend/
   internal/db/        Postgres connection + embedded SQL migrations
   internal/models/    shared data types
   internal/store/     SQL queries
-  internal/auth/      JWT + password hashing (to be replaced by Cognito on the ALB)
+  internal/cognito/   Cognito ID token check (RS256 against the pool's JWKS)
   internal/storage/   file storage (local folder, or the Mountpoint for S3 folder on AWS)
   internal/handlers/  HTTP handlers
   internal/router/    route wiring
@@ -464,7 +474,9 @@ Every variable has a local-dev default.
 |---|---|---|
 | `PORT` | `8080` | API listen port |
 | `DATABASE_URL` | `postgres://videointell:videointell@localhost:5432/videointell?sslmode=disable` | Postgres connection string; on AWS built from the Secrets Manager value ECS injects |
-| `JWT_SECRET` | `dev-secret-change-me` | Signs JWTs and the short-lived `/api/files/...` upload and playback URLs (HMAC-SHA256); outside local dev, use at least 32 random bytes. After the move to Cognito it only signs file URLs and will be renamed |
+| `JWT_SECRET` | `dev-secret-change-me` | Signs the short-lived `/api/files/...` and `/api/results/...` URLs (HMAC-SHA256); outside local dev, use at least 32 random bytes |
+| `COGNITO_USER_POOL_ID` | _(required)_ | `terraform -chdir=infra output -raw cognito_user_pool_id` |
+| `COGNITO_CLIENT_ID` | _(required)_ | `terraform -chdir=infra output -raw cognito_client_id` |
 | `LOCAL_DATA_DIR` | `./data` | Video folder; `/mnt/videos` (Mountpoint for S3) on AWS |
 | `REQUIRE_MOUNT` | _(empty)_ | Set to `true` on AWS: the API refuses to start if `LOCAL_DATA_DIR` is not a mount point, so uploads never land on the instance disk by mistake |
 

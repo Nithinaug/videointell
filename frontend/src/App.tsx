@@ -1,21 +1,25 @@
-import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Route, BrowserRouter, Routes } from 'react-router-dom'
+import { startLogin } from './auth'
 import { AuthProvider, useAuth } from './context/AuthContext'
-import AuthForm from './pages/AuthForm'
+import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
 import Upload from './pages/Upload'
 import VideoDetail from './pages/VideoDetail'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth()
-  if (!token) return <Navigate to="/login" replace />
+  useEffect(() => {
+    if (!token) startLogin()
+  }, [token])
+  if (!token) return <div className="min-h-screen flex items-center justify-center bg-[#07090c] text-slate-400">Redirecting to sign in...</div>
   return <>{children}</>
 }
 
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<AuthForm mode="login" />} />
-      <Route path="/register" element={<AuthForm mode="register" />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route
         path="/"
         element={

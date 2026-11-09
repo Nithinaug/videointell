@@ -1,4 +1,6 @@
 import axios from 'axios'
+import { startLogin } from '../auth'
+import { clearSession } from '../context/AuthContext'
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
 
@@ -12,11 +14,13 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-export interface User {
-  id: string
-  email: string
-  created_at: string
-}
+api.interceptors.response.use(undefined, (error) => {
+  if (error.response?.status === 401) {
+    clearSession()
+    startLogin()
+  }
+  return Promise.reject(error)
+})
 
 export interface Video {
   id: string
@@ -43,16 +47,6 @@ export interface Summary {
 export interface Results {
   summary: Summary
   labels: string[]
-}
-
-export async function register(email: string, password: string) {
-  const { data } = await api.post<{ token: string; user: User }>('/api/auth/register', { email, password })
-  return data
-}
-
-export async function login(email: string, password: string) {
-  const { data } = await api.post<{ token: string; user: User }>('/api/auth/login', { email, password })
-  return data
 }
 
 export async function listVideos() {

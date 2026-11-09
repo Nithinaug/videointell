@@ -1,16 +1,12 @@
 package store
 
 import (
-	"errors"
-
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 
 	"videointell/backend/internal/models"
 )
-
-var ErrEmailTaken = errors.New("email already registered")
 
 type Store struct {
 	db *sqlx.DB
@@ -20,26 +16,12 @@ func New(db *sqlx.DB) *Store {
 	return &Store{db: db}
 }
 
-func (s *Store) CreateUser(email, passwordHash string) (models.User, error) {
-	u := models.User{ID: uuid.NewString(), Email: email, PasswordHash: passwordHash}
-	_, err := s.db.Exec(`INSERT INTO users (id, email, password_hash) VALUES ($1,$2,$3)`, u.ID, u.Email, u.PasswordHash)
-	var pqErr *pq.Error
-	if errors.As(err, &pqErr) && pqErr.Code == "23505" {
-		return u, ErrEmailTaken
-	}
-	return u, err
-}
-
-func (s *Store) GetUserByEmail(email string) (models.User, error) {
-	var u models.User
-	err := s.db.Get(&u, `SELECT * FROM users WHERE email=$1`, email)
-	return u, err
-}
-
-func (s *Store) GetUserByID(id string) (models.User, error) {
-	var u models.User
-	err := s.db.Get(&u, `SELECT * FROM users WHERE id=$1`, id)
-	return u, err
+func (s *Store) UpsertCognitoUser(sub, email string) (string, error) {
+	var id string
+	err := s.db.Get(&id, `INSERT INTO users (email, cognito_sub) VALUES ($1, $2)
+		ON CONFLICT (email) DO UPDATE SET cognito_sub = EXCLUDED.cognito_sub
+		RETURNING id`, email, sub)
+	return id, err
 }
 
 func (s *Store) CreateVideo(userID, title, originalKey, contentType string) (models.Video, error) {

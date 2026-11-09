@@ -1,13 +1,17 @@
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
-  description = "ALB: HTTP from the internet"
+  description = "ALB: HTTP from CloudFront only"
   vpc_id      = local.base.vpc_id
 
   ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_ec2_managed_prefix_list.cloudfront.id]
   }
 
   egress {
@@ -235,6 +239,8 @@ resource "aws_ecs_task_definition" "api" {
       { name = "AWS_REGION", value = local.base.region },
       { name = "LOCAL_DATA_DIR", value = "/mnt/videos" },
       { name = "REQUIRE_MOUNT", value = "true" },
+      { name = "COGNITO_USER_POOL_ID", value = local.base.cognito_user_pool_id },
+      { name = "COGNITO_CLIENT_ID", value = local.base.cognito_client_id },
     ]
     secrets     = [{ name = "JWT_SECRET", valueFrom = aws_ssm_parameter.jwt.arn }]
     mountPoints = [{ sourceVolume = "videos", containerPath = "/mnt/videos" }]
