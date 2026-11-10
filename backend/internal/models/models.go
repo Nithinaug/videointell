@@ -30,6 +30,15 @@ type VideoDetail struct {
 	ResultsURL string `json:"results_url,omitempty"`
 }
 
+type ShareLink struct {
+	ID        string     `db:"id" json:"id"`
+	VideoID   string     `db:"video_id" json:"video_id"`
+	CreatedAt time.Time  `db:"created_at" json:"created_at"`
+	ExpiresAt time.Time  `db:"expires_at" json:"expires_at"`
+	RevokedAt *time.Time `db:"revoked_at" json:"revoked_at"`
+	State     string     `db:"-" json:"state"`
+}
+
 type Clip struct {
 	ID        string    `db:"id" json:"id"`
 	VideoID   string    `db:"video_id" json:"video_id"`

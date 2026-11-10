@@ -49,6 +49,9 @@ func (v *Verifier) Verify(token string) (Identity, error) {
 	if sub == "" || email == "" {
 		return Identity{}, errors.New("token has no sub or email")
 	}
+	if v, ok := claims["email_verified"]; !ok || (v != true && v != "true") {
+		return Identity{}, errors.New("email is not verified")
+	}
 	return Identity{Sub: sub, Email: email}, nil
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { Link, useLocation, useMatch, useNavigate, useSearchParams } from 'react-router-dom'
 import { search, type SearchHit } from '../api/client'
 import { useAuth } from '../context/AuthContext'
+import { HomeIcon, SignOutIcon, UploadIcon } from './Icons'
 import { snippet } from '../lib/snippet'
 import { clock } from '../lib/time'
 
@@ -100,9 +101,9 @@ export default function Shell({ children }: { children: ReactNode }) {
     <div className="relative min-h-screen overflow-x-clip bg-[#0c0c0e] text-zinc-200">
       <Aurora />
       <header className="relative z-20 px-4 pt-4">
-        <nav className="glass mx-auto grid max-w-6xl grid-cols-[1fr_auto] items-center gap-3 rounded-2xl px-4 py-2.5 md:grid-cols-[1fr_minmax(0,28rem)_1fr]">
-          <Link to="/" className="hidden text-sm font-medium text-zinc-400 transition-colors hover:text-white md:block">
-            Home
+        <nav className="glass mx-auto grid max-w-6xl grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl px-4 py-2.5 md:grid-cols-[1fr_minmax(0,28rem)_1fr]">
+          <Link to="/" aria-label="Home" title="Home" className="grid h-9 w-9 place-items-center justify-self-start rounded-xl text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white">
+            <HomeIcon />
           </Link>
           <form onSubmit={onSearch} role="search" className="relative min-w-0">
             <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
@@ -159,15 +160,16 @@ export default function Shell({ children }: { children: ReactNode }) {
             )}
           </form>
           <div className="flex shrink-0 items-center justify-end gap-2">
-            <Link to="/upload" className="btn-glow rounded-xl px-3.5 py-2 text-sm font-semibold text-white">
-              Upload
+            <Link to="/upload" aria-label="Upload" title="Upload" className="btn-glow grid h-9 w-9 place-items-center rounded-xl">
+              <UploadIcon />
             </Link>
             <button
               onClick={logout}
-              title={user?.email}
-              className="rounded-xl px-3 py-2 text-sm text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white"
+              aria-label="Sign out"
+              title={user?.email ? `Sign out (${user.email})` : 'Sign out'}
+              className="grid h-9 w-9 place-items-center rounded-xl text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white"
             >
-              Sign out
+              <SignOutIcon />
             </button>
           </div>
         </nav>

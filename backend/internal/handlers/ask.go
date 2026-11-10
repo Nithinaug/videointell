@@ -19,14 +19,20 @@ import (
 )
 
 type AskHandler struct {
-	Videos *VideoHandler
-	AI     awsapi.Converser
+	Videos  *VideoHandler
+	AI      awsapi.Converser
+	limiter *rateLimiter
+}
+
+func NewAskHandler(videos *VideoHandler, ai awsapi.Converser, perHour int) *AskHandler {
+	return &AskHandler{Videos: videos, AI: ai, limiter: newRateLimiter(perHour, time.Hour)}
 }
 
 const (
-	maxAskLines = 30
-	maxAskChars = 12_000
-	askSystem   = `Answer only from the numbered lines. Lines marked "on screen" are text read from the video frames; the others are speech. If the input is a keyword or topic rather than a question, briefly explain what the lines say about it. Reply with JSON only: {"answer": string, "sources": [line numbers]}. If the lines say nothing useful about it, reply {"answer": "", "sources": []}.`
+	maxAskLines      = 30
+	maxAskChars      = 12_000
+	maxVideoAskChars = 40_000
+	askSystem        = `Answer only from the numbered lines. Lines marked "on screen" are text read from the video frames; the others are speech. If the input is a keyword or topic rather than a question, briefly explain what the lines say about it. Reply with JSON only: {"answer": string, "sources": [line numbers]}. If the lines say nothing useful about it, reply {"answer": "", "sources": []}.`
 )
 
 var stopWords = map[string]bool{}
@@ -81,11 +87,19 @@ func keywords(q string) []string {
 	return out
 }
 
+func itemChars(items []askItem) int {
+	n := 0
+	for _, it := range items {
+		n += len(it.Text)
+	}
+	return n
+}
+
 func pickContext(videos []askVideo, q string, whole bool) ([]askLine, bool) {
 	var lines []askLine
 	chars, truncated := 0, false
 	add := func(v askVideo, s askItem) bool {
-		if len(lines) == maxAskLines && !whole || chars+len(s.Text) > maxAskChars && !whole || chars+len(s.Text) > worker.MaxTranscriptChars {
+		if len(lines) == maxAskLines && !whole || chars+len(s.Text) > maxAskChars && !whole || chars+len(s.Text) > maxVideoAskChars {
 			truncated = true
 			return false
 		}
@@ -161,6 +175,10 @@ func (h *AskHandler) Ask(c *gin.Context) {
 		return
 	}
 	userID := c.GetString("user_id")
+	if h.limiter != nil && !h.limiter.allow(userID, time.Now()) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("you can ask %d questions an hour; try again later", h.limiter.limit)})
+		return
+	}
 	var candidates []models.Video
 	if body.VideoID != "" {
 		v, err := h.Videos.Store.GetVideo(body.VideoID)
@@ -214,7 +232,8 @@ func (h *AskHandler) Ask(c *gin.Context) {
 		c.JSON(http.StatusOK, empty)
 		return
 	}
-	lines, truncated := pickContext(videos, q, body.VideoID != "")
+	whole := body.VideoID != "" && itemChars(videos[0].items) <= maxVideoAskChars
+	lines, truncated := pickContext(videos, q, whole)
 	empty["truncated"] = truncated
 	if len(lines) == 0 {
 		c.JSON(http.StatusOK, empty)

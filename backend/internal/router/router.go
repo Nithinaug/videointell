@@ -11,6 +11,7 @@ type Deps struct {
 	Files        *handlers.FilesHandler
 	Ask          *handlers.AskHandler
 	Clips        *handlers.ClipHandler
+	Shares       *handlers.ShareHandler
 	Auth         gin.HandlerFunc
 }
 
@@ -26,6 +27,8 @@ func New(d Deps) *gin.Engine {
 		api.PUT("/files/*key", d.Files.Upload)
 		api.GET("/files/*key", d.Files.File)
 		api.GET("/results/:exp/:sig/*key", d.Files.Result)
+		api.GET("/share-files/:exp/:sig/*key", d.Files.ShareFile)
+		api.GET("/share-view", d.Shares.View)
 
 		videos := api.Group("/videos")
 		videos.Use(d.Auth)
@@ -38,6 +41,9 @@ func New(d Deps) *gin.Engine {
 			videos.GET("/:id/clips", d.Clips.List)
 			videos.POST("/:id/clips", d.Clips.Create)
 			videos.DELETE("/:id/clips/:clip", d.Clips.Delete)
+			videos.GET("/:id/shares", d.Shares.List)
+			videos.POST("/:id/shares", d.Shares.Create)
+			videos.DELETE("/:id/shares/:share", d.Shares.Revoke)
 		}
 		search := api.Group("/search")
 		search.Use(d.Auth)

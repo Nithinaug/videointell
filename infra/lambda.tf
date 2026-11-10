@@ -3,6 +3,11 @@ variable "chunk_seconds" {
   default = 15
 }
 
+variable "max_video_minutes" {
+  type    = number
+  default = 20
+}
+
 variable "worker_memory_mb" {
   type    = number
   default = 10240
@@ -80,7 +85,7 @@ resource "aws_lambda_function" "worker" {
   timeout       = 900
 
   environment {
-    variables = { CHUNK_SECONDS = tostring(var.chunk_seconds) }
+    variables = { CHUNK_SECONDS = tostring(var.chunk_seconds), MAX_VIDEO_MINUTES = tostring(var.max_video_minutes) }
   }
 
   ephemeral_storage {

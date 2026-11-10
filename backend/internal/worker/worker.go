@@ -28,6 +28,14 @@ func SetChunkSeconds(v float64) {
 	}
 }
 
+var maxSeconds = 0.0
+
+func SetMaxMinutes(v float64) {
+	if v > 0 {
+		maxSeconds = v * 60
+	}
+}
+
 type Store interface {
 	Get(ctx context.Context, key, path string) error
 	Put(ctx context.Context, key, path string) error
@@ -64,6 +72,7 @@ var ladder = []Rendition{{Height: 1080, Bitrate: 5_000_000}, {Height: 720, Bitra
 type source struct {
 	Width, Height int
 	HasAudio      bool
+	Seconds       float64
 }
 
 func OutputPrefix(videoKey string) (string, error) {
@@ -95,6 +104,9 @@ func Split(ctx context.Context, st Store, t Tools, ev Event) (Event, error) {
 	info, err := probe(src)
 	if err != nil {
 		return Event{}, err
+	}
+	if maxSeconds > 0 && info.Seconds > maxSeconds {
+		return Event{}, fmt.Errorf("video is %.0f minutes; the limit is %.0f", info.Seconds/60, maxSeconds/60)
 	}
 	list := filepath.Join(dir, "chunks.csv")
 	err = ffmpeg("-i", src, "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
@@ -323,7 +335,7 @@ func Assemble(ctx context.Context, st Store, t Tools, ev Event) error {
 }
 
 func probe(src string) (source, error) {
-	raw, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height", "-of", "json", src).Output()
+	raw, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", src).Output()
 	if err != nil {
 		return source{}, fmt.Errorf("ffprobe: %w", err)
 	}
@@ -333,11 +345,15 @@ func probe(src string) (source, error) {
 			Width     int    `json:"width"`
 			Height    int    `json:"height"`
 		} `json:"streams"`
+		Format struct {
+			Duration string `json:"duration"`
+		} `json:"format"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return source{}, fmt.Errorf("ffprobe output: %w", err)
 	}
 	var s source
+	s.Seconds, _ = strconv.ParseFloat(parsed.Format.Duration, 64)
 	for _, st := range parsed.Streams {
 		switch st.CodecType {
 		case "video":

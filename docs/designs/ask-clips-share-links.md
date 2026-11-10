@@ -1,7 +1,13 @@
 # video-process: Ask box, clips and share links
 
 *   **Author:** Nithinaug
-*   **Status:** Draft
+*   **Status:** Built (2026-11-10). Changes made while building, which win
+    over the text below: no scope chip (the page sets the scope); Ask shares
+    the search box (Enter) for this video and all videos; on-screen text
+    (OCR) is searched and sent to Ask too; sharing is one Share button that
+    copies a 7-day link (no day choice, no list or cancel in the UI), plus a
+    Share button per clip (`?clip=`); the active-link limit is 50; clips
+    play on their own timeline with custom controls.
 *   **Date:** 2026-11-09
 
 --------------------------------------------------------------------------------

@@ -7,12 +7,18 @@ import VideoCard from '../components/VideoCard'
 
 export default function Dashboard() {
   const [videos, setVideos] = useState<Video[] | null>(null)
+  const [blocked, setBlocked] = useState<string | null>(null)
 
   useEffect(() => {
     let stopped = false
     async function refresh() {
-      const v = await listVideos()
-      if (!stopped) setVideos(v)
+      try {
+        const v = await listVideos()
+        if (!stopped) setVideos(v)
+      } catch (err: unknown) {
+        const msg = (err as { response?: { status?: number; data?: { error?: string } } })?.response
+        if (!stopped && msg?.status === 403) setBlocked(msg.data?.error ?? 'You cannot use the app right now.')
+      }
     }
     refresh()
     const interval = setInterval(refresh, 5000)
@@ -26,7 +32,12 @@ export default function Dashboard() {
     <Shell>
       <h1 className="font-display mb-6 text-3xl font-bold tracking-tight text-white">Videos</h1>
 
-      {videos === null ? (
+      {blocked ? (
+        <div className="glass rounded-3xl px-6 py-16 text-center">
+          <p className="font-medium text-white">{blocked}</p>
+          <p className="mt-2 text-sm text-zinc-400">This is a small public preview with a limited number of accounts. Please try again later.</p>
+        </div>
+      ) : videos === null ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((i) => (
             <div key={i} className="shimmer aspect-[4/3] rounded-3xl" />

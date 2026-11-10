@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Hls from 'hls.js'
-import { canDelete, deleteVideo, getProgress, getResults, getVideoDetail, progressPercent, type Clip, type Segment, type Results, type VideoDetail as VideoDetailT } from '../api/client'
+import { canDelete, createShare, deleteVideo, getProgress, getResults, getVideoDetail, progressPercent, type Clip, type Segment, type Results, type VideoDetail as VideoDetailT } from '../api/client'
 import AskCard from '../components/AskCard'
+import ClipControls from '../components/ClipControls'
 import ClipsPanel from '../components/ClipsPanel'
+import { ShareIcon, TrashIcon } from '../components/Icons'
 import Shell from '../components/Shell'
 import { loadClip } from '../lib/clip'
 import { firstAppearances, snippet } from '../lib/snippet'
@@ -12,7 +14,7 @@ import { clock, thumbFor, toSeconds } from '../lib/time'
 
 const POLL_MS = 10_000
 
-function ChapterStrip({
+export function ChapterStrip({
   base,
   chapters,
   time,
@@ -86,7 +88,7 @@ function Skeleton() {
   )
 }
 
-function Transcript({ segments, screen, time, onSeek, filter }: { segments: Segment[]; screen: Segment[]; time: number; onSeek: (s: number) => void; filter: string }) {
+export function Transcript({ segments, screen, time, onSeek, filter }: { segments: Segment[]; screen: Segment[]; time: number; onSeek: (s: number) => void; filter: string }) {
   const box = useRef<HTMLDivElement>(null)
   const activeRef = useRef<HTMLButtonElement>(null)
   const ms = time * 1000
@@ -365,37 +367,7 @@ function Watch({ detail, results, startAt, filter, asked }: { detail: VideoDetai
           <track kind="captions" srcLang="en" label="English" src={base + 'transcript.vtt'} />
         </video>
         )}
-        {clip && clipView && (
-          <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 rounded-b-2xl bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-8 text-sm text-white">
-            <button onClick={clipToggle} aria-label={playing ? 'Pause clip' : 'Play clip'} className="grid h-8 w-8 shrink-0 place-items-center rounded-full hover:bg-white/10">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden>
-                {playing ? <path d="M7 5h3v14H7zM14 5h3v14h-3z" /> : <path d="M8 5.5v13l10-6.5z" />}
-              </svg>
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={clipView.length}
-              step={0.1}
-              value={rel}
-              onChange={(e) => clipSeek(Number(e.target.value))}
-              aria-label="Clip position"
-              className="h-1 min-w-0 flex-1 cursor-pointer accent-amber-400"
-            />
-            <span className="shrink-0 tabular-nums text-zinc-200">
-              {clock(rel)} / {clock(clipView.length)}
-            </span>
-            <button
-              onClick={() => (document.fullscreenElement ? document.exitFullscreen() : box.current?.requestFullscreen())}
-              aria-label="Full screen"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full hover:bg-white/10"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-                <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
-              </svg>
-            </button>
-          </div>
-        )}
+        {clip && clipView && <ClipControls playing={playing} position={rel} length={clipView.length} onToggle={clipToggle} onSeek={clipSeek} fullscreenTarget={box} />}
       </motion.div>
         {!results ? (
           <Skeleton />
@@ -451,6 +423,8 @@ export default function VideoDetail() {
   const [params] = useSearchParams()
   const startAt = Number(params.get('t')) || 0
   const [deleting, setDeleting] = useState(false)
+  const [sharing, setSharing] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const [detail, setDetail] = useState<VideoDetailT | null>(null)
   const [results, setResults] = useState<Results | null>(null)
 
@@ -490,19 +464,61 @@ export default function VideoDetail() {
     navigate('/', { replace: true })
   }
 
+  async function onShare() {
+    setSharing(true)
+    try {
+      const { token } = await createShare(video.id, 7)
+      await navigator.clipboard.writeText(`${location.origin}/share/${token}`)
+      setToast('Link copied to clipboard')
+    } catch {
+      setToast('Could not create the link')
+    } finally {
+      setSharing(false)
+      setTimeout(() => setToast(null), 2500)
+    }
+  }
+
   return (
     <Shell>
       <div className="space-y-5">
         <header className="space-y-2">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-white">{video.title}</h1>
+            {video.status === 'ready' && (
+              <div className="relative ml-auto">
+                <button
+                  onClick={onShare}
+                  disabled={sharing}
+                  aria-label="Share"
+                  title="Share"
+                  className="grid h-9 w-9 place-items-center rounded-xl text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
+                >
+                  <ShareIcon />
+                </button>
+                <AnimatePresence>
+                  {toast && (
+                    <motion.p
+                      role="status"
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      className="absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-white shadow-xl ring-1 ring-white/10"
+                    >
+                      {toast}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
             {canDelete(video.status) && (
               <button
                 onClick={onDelete}
                 disabled={deleting}
-                className={`ml-auto rounded-xl px-3 py-2 text-sm text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-red-500/15 hover:text-red-200 hover:ring-red-400/40 disabled:opacity-50`}
+                aria-label="Delete video"
+                title="Delete video"
+                className={`${video.status === 'ready' ? '' : 'ml-auto '}grid h-9 w-9 place-items-center rounded-xl text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-red-500/15 hover:text-red-200 hover:ring-red-400/40 disabled:opacity-50`}
               >
-                {deleting ? 'Deleting...' : 'Delete'}
+                <TrashIcon />
               </button>
             )}
           </div>

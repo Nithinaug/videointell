@@ -30,7 +30,7 @@ func TestVerify(t *testing.T) {
 	v.jwksURL = srv.URL
 
 	sign := func(k *rsa.PrivateKey, mod func(jwt.MapClaims)) string {
-		c := jwt.MapClaims{"iss": v.issuer, "aud": "client", "token_use": "id", "sub": "s1", "email": "a@b.c", "exp": time.Now().Add(time.Hour).Unix()}
+		c := jwt.MapClaims{"iss": v.issuer, "aud": "client", "token_use": "id", "sub": "s1", "email": "a@b.c", "email_verified": true, "exp": time.Now().Add(time.Hour).Unix()}
 		if mod != nil {
 			mod(c)
 		}
@@ -49,6 +49,8 @@ func TestVerify(t *testing.T) {
 		"expired":        sign(key, func(c jwt.MapClaims) { c["exp"] = time.Now().Add(-time.Minute).Unix() }),
 		"wrong issuer":   sign(key, func(c jwt.MapClaims) { c["iss"] = "https://evil" }),
 		"other key":      sign(other, nil),
+		"unverified":     sign(key, func(c jwt.MapClaims) { c["email_verified"] = false }),
+		"no verified":    sign(key, func(c jwt.MapClaims) { delete(c, "email_verified") }),
 	}
 	for name, tok := range bad {
 		if _, err := v.Verify(tok); err == nil {

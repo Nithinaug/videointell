@@ -13,33 +13,53 @@ Transcoding, transcription and summarising are CPU-heavy, so running them on
 the server that answers web requests starves the app when many users upload
 at once. That processing has to run somewhere else.
 
-## Why serverful and no SDK
+## What it does
+
+Upload a long video (a meeting, lecture, tutorial or screen recording) and
+about a minute later you get:
+
+- **Adaptive HLS streaming** with a thumbnail, chapters and captions.
+- **A transcript** that follows playback; click a line to jump there.
+- **On-screen text**: every 3 seconds the worker reads the text in the frame
+  (slides, code, terminal output, UI labels) with Tesseract OCR.
+- **One search box** that finds a moment by what was said or shown. It
+  suggests matches as you type; Enter shows all results and an **AI answer**
+  (Amazon Nova Lite) whose timestamps come from real transcript or screen
+  lines. On a video page it searches and answers about that video;
+  elsewhere, about all your videos.
+- **Clips**: save a time range of up to 5 minutes; a clip plays on its own
+  timeline from 0:00.
+- **Share links**: the Share button copies a 7-day, read-only link to the
+  video for someone without an account; a clip's Share button copies a link
+  that opens straight into that clip.
+
+## Rules this project follows
 
 This is a learning project and the serverful twin of my serverless project,
-ClimaRoute. Two rules shape every choice below:
+ClimaRoute. The rules that shape every choice below:
 
-- **Serverful:** every piece of compute that runs our code is an EC2 instance
-  we size and patch, with ECS placing containers on it.
-- **No AWS SDK in our code:** all AWS wiring lives in Terraform, so the
-  infrastructure is the thing being learned. Our code makes no AWS API calls;
-  AWS services, the Mountpoint client and the ECS agent make them for us. The
-  only AWS endpoint our code talks to is a public HTTPS key download (see
-  [Identity and playback](#identity-and-playback)).
+- **Best resource per job, not fully serverless:** the API runs on ECS on
+  EC2; the heavy processing runs as a Lambda fan-out, because 1,000 parallel
+  workers finish a long video in about the time of a short one.
+- **AWS SDK only in the Lambda worker:** all other AWS wiring lives in
+  Terraform. The API makes two kinds of AWS call itself, both signed with
+  hand-written SigV4 from Go's standard library: its Aurora IAM sign-in token
+  and the Bedrock Converse call behind the AI answer
+  (`backend/internal/awsapi`). The Cognito key download is plain HTTPS.
+- **AWS Free plan credits only:** the plan blocks MediaConvert, Transcribe
+  (`SubscriptionRequiredException`) and Anthropic models on Bedrock, so
+  transcoding and transcription run in our own Lambda workers with ffmpeg
+  and whisper.cpp, OCR with Tesseract, and the AI uses Amazon Nova Lite.
 
-A third constraint: the AWS account is on the **AWS Free plan**, which blocks
-MediaConvert and Transcribe (`SubscriptionRequiredException`). Transcoding
-and transcription therefore run in our own Lambda workers with ffmpeg and
-whisper.cpp; Rekognition, Step Functions, SNS and EventBridge work on the
-plan.
+Some code exists only because of these rules: HMAC-signed file URLs, the
+stdlib SigV4 signer and the Mountpoint folder. That is deliberate, not
+accidental complexity.
 
-Some code exists only because of the no-SDK rule: HMAC-signed file URLs,
-CloudFront cookie signing with Go's standard crypto, and the Mountpoint
-folder. That is deliberate, not accidental complexity.
+## Design
 
-## Target design
-
-> **Not built yet.** This section describes where the project is going. The
-> [Status](#status) list shows what exists today.
+> Everything here is built except CloudFront and WAF, which wait on AWS
+> verifying the account. Until then the app runs in local hybrid mode (see
+> [Running locally](#running-locally)). The [Status](#status) list has details.
 
 - **ECS on EC2** runs the Go API and an Nginx server for the React build on
   one Auto Scaling group.
@@ -53,8 +73,8 @@ folder. That is deliberate, not accidental complexity.
 - **Mountpoint for Amazon S3** mounts the video bucket on each EC2 host, so
   the API saves uploads as plain files and they land in S3.
 - **EventBridge + Step Functions** turn each finished upload into a pipeline:
-  **Lambda** workers (split, then HLS, thumbnails and transcript per chunk,
-  then stitch), **Rekognition Video** (labels, in parallel), **Bedrock** (summary, chapters, tags), then
+  **Lambda** workers (split, then HLS, thumbnails, transcript and on-screen
+  text per chunk, then stitch), **Bedrock** (summary and chapters), then
   the result into **Aurora PostgreSQL** through the **RDS Data API**, and an
   **SNS** email.
 - **Aurora PostgreSQL Serverless v2** (express configuration, 0 to 4 ACU,
@@ -79,7 +99,7 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
 | API compute | Lambda (container images) | Go API container on EC2 (ECS, EC2 launch type) |
 | Public entry, throttling | API Gateway HTTP API | CloudFront + ALB + AWS WAF rate rule |
 | Auth | Cognito in the app | Cognito managed login in the app (PKCE); the API verifies the ID token |
-| Heavy work | Step Functions Distributed Map on Lambda | The same: Distributed Map of Go Lambda workers (ffmpeg, whisper.cpp), plus Rekognition and Bedrock |
+| Heavy work | Step Functions Distributed Map on Lambda | The same: Distributed Map of Go Lambda workers (ffmpeg, whisper.cpp, Tesseract), plus Bedrock |
 | Long-running jobs | ECS Fargate | ECS on an EC2 Auto Scaling group |
 | Database | DynamoDB (TTL expiry) | Aurora PostgreSQL (provisioned) |
 | Frontend hosting | Amplify Hosting | Nginx container behind the ALB, cached by CloudFront |
@@ -136,18 +156,17 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
                                               |
         0. set_video_status(key, [uploaded] -> processing); stop if false
                                               |
-        1. Parallel:
-           a. Lambda split: ffmpeg copies the upload into ~15 s chunks
-              (cut at keyframes, no re-encode) under work/
-              Distributed Map, one Lambda per chunk (up to 1,000 at once):
-              HLS ladder capped at source resolution, thumbnails every 10 s,
-              whisper.cpp transcript shifted to the chunk's start
-              Lambda assemble: joins the playlists (DISCONTINUITY between
-              chunks) and transcripts, writes VTT and the Bedrock request
-           b. Rekognition Video on the upload: Start, then Wait/Get loop
-              -> labels.json in S3
+        1. Lambda split: ffmpeg copies the upload into ~15 s chunks
+           (cut at keyframes, no re-encode) under work/
+           Distributed Map, one Lambda per chunk (up to 1,000 at once):
+           HLS ladder capped at source resolution, thumbnails every 10 s,
+           on-screen text every 3 s (Tesseract, confident words only),
+           whisper.cpp transcript, all shifted to the chunk's start
+           Lambda assemble: joins the playlists (DISCONTINUITY between
+           chunks), transcripts and screen text; writes VTT, screen.json
+           and the Bedrock request
                                               |
-        3. Bedrock InvokeModel with S3 input and output -> summary, chapters, tags
+        3. Bedrock InvokeModel with S3 input and output -> summary, chapters
                                               |
         5. set_video_status(key, [processing] -> ready, results)
                                               |
@@ -172,14 +191,15 @@ The same kinds of jobs as ClimaRoute, done the serverful way:
    `uploads/*.done`, which starts the state machine with the marker's key.
    The state machine strips `.done` to get the video key.
 6. The state machine runs the steps in the processing path above. Large data
-   (video files, transcripts, labels, Bedrock input and output) stays in S3;
+   (video files, transcripts, screen text, Bedrock input and output) stays in S3;
    only S3 keys pass through the state, which keeps it under the 256 KB
    limit.
-7. The dashboard reads the status from Aurora, and while a video is being
-   processed the video page polls `GET /api/videos/:id/progress` (split done,
-   chunks done out of total, labels, stitch, summary), worked out from marker
-   files the Lambdas write. Once `ready`, the player streams the HLS files
-   from `processed/` through a signed results-folder URL.
+7. The dashboard reads the status from Aurora. While a video is being
+   processed, its page shows a black player with a percentage worked out
+   from `GET /api/videos/:id/progress` (split done, chunks done out of total,
+   stitch, summary), which reads marker files the Lambdas write. Once
+   `ready`, the player streams the HLS files from `processed/` through a
+   signed results-folder URL.
 
 ### Video status
 
@@ -222,10 +242,34 @@ unknown key changes nothing.
 - **Original upload:** `GET /api/files/...` with an HMAC-signed URL, used
   while a video is still processing.
 - **Search:** `GET /api/search?q=` reads the user's ready transcripts and
-  returns up to 50 lines that contain every word, each with its video and
-  start time; the app opens the video at that second (`?t=`).
+  screen text and returns up to 50 moments that contain every word, each
+  marked `speech` or `screen`, plus how many videos were searched and which
+  are still processing. A screen match counts only where the text first
+  appears, so a label that stays on screen is one result.
+- **Ask:** `POST /api/ask {q, video_id?}` picks the matching transcript and
+  screen lines (with a neighbour each side; at most 30 lines and 12,000
+  characters across all videos, or the whole transcript for one video), asks
+  Nova Lite through a SigV4-signed Bedrock Converse call, and returns the
+  answer with sources. Sources are always lines the server sent, never text
+  the model wrote.
+- **Clips:** `GET/POST /api/videos/:id/clips` and `DELETE .../clips/:clip`.
+  A clip is a saved range of 1 second to 5 minutes; nothing is re-encoded.
+  The browser builds a small HLS playlist from the segments that cover the
+  range, so the clip plays on its own timeline.
+- **Share links:** `POST /api/videos/:id/shares` returns a token (32 random
+  bytes, shown once; only its SHA-256 is stored) for a 7-day link
+  `/share/<token>`, or `/share/<token>?clip=<id>` for a clip. `GET
+  /api/share-view` (token in the `X-Share-Token` header, so it never reaches
+  the request log) returns the title, clips and a signed folder URL that
+  lasts 5 minutes; the share page renews it every 4 minutes and rewrites
+  every segment request to the newest one. `/api/share-files/...` has its own
+  signing scope and serves only the player's files (summary, transcript,
+  captions, screen text, thumbnails, HLS). Up to 50 active links per video,
+  enforced in one SQL statement. List and cancel routes exist in the API but
+  not in the UI yet.
 - **Delete:** `DELETE /api/videos/:id` removes the upload, its marker, the
-  results and the work chunks through Mountpoint, then the database row.
+  results and the work chunks through Mountpoint, then the database row
+  (its clips and share links go with it).
   It refuses while a video is queued or processing, because the pipeline
   would write files back after the delete.
 
@@ -261,8 +305,8 @@ per GB.
   `MaxConcurrency` (1,000) and the account's Lambda concurrency (1,000 in
   ap-south-1). Measured: the test clip took 58 s end to end, against about
   220 s with the old EC2 worker starting cold.
-- **Managed calls**: Rekognition and Bedrock quotas are the limit; every
-  call retries with backoff.
+- **Managed calls**: Bedrock quotas are the limit; every pipeline call
+  retries with backoff.
 
 ### Alternatives considered
 
@@ -281,12 +325,30 @@ per GB.
 - **No NAT Gateway.** The API instance sits in a public subnet with a
   public IP and a security group that accepts only the ALB. Accepted for
   cost while the project is a demo.
-- **Max video:** 5 GiB per upload, and about 4.5 GiB in practice: the split
+- **Max video:** 1 GB and 20 minutes by default (`MAX_UPLOAD_MB`,
+  `max_video_minutes`); the hard ceiling is about 4.5 GiB, because the split
   Lambda keeps the upload and its chunks in its 10 GB `/tmp`.
+- **Abuse limits:** 3 uploads per user and 30 across the site per day, 30 AI
+  answers per user per hour and 100 accounts in all, by default. A question
+  about one video sends its whole transcript only up to 40,000 characters;
+  longer videos send the matching lines instead. The Ask counter lives in
+  the API's memory, so it resets on restart and is per instance.
+- **Sign-in:** tokens must carry `email_verified = true`. The API refuses to
+  start on AWS (`REQUIRE_MOUNT=true`) with the default or a short
+  `JWT_SECRET`; `run-hybrid.sh` makes a random one for each run.
 - **Chunk edges:** whisper hears each 15-second chunk on its own, so a word
   cut at an edge can come out wrong.
-- **Labels:** Rekognition reads only MP4 and MOV (H.264). Other formats
-  (for example WebM) get an empty label list; the rest of the pipeline runs.
+- **On-screen text:** Tesseract reads printed text well and handwriting or
+  very small text poorly; frames are read every 3 seconds, so text shown for
+  less than that can be missed. Videos processed before OCR was added have
+  no `screen.json`; re-upload them to get it.
+- **Clips:** a clip's timeline rounds out to whole HLS segments, so it can
+  be a few seconds longer than the range. Safari, which plays HLS natively,
+  shows the full video's timeline and pauses at the clip's end.
+- **Share links:** a clip link opens the whole video (the clip plays first).
+  Links cannot be cancelled from the UI yet; they expire after 7 days or when
+  the video is deleted. In hybrid mode the API runs on the laptop, so links
+  only open there until CloudFront is up.
 - **Search scale:** search reads every ready transcript per query. Fine for
   tens of videos; for hundreds, move to Postgres full-text search filled
   when the pipeline marks a video ready.
@@ -300,16 +362,17 @@ per GB.
   `processed/`, so expiry only blocks re-processing an old video.
 - **Cost:** EC2, the NAT Gateway, the ALB and Aurora bill by the hour even
   when idle. Tear the stack down after demos.
-- **Region:** `ap-south-1`. Rekognition Video and Nova Lite work there
-  (checked).
+- **Region:** `ap-south-1`. Nova Lite works there (checked).
 
 ### Later
 
-- Postgres full-text search over transcripts, summaries and tags, when
+- Go public: CloudFront and WAF, rate limits on Ask and uploads, and a
+  monthly cost check against the remaining credits.
+- Highlight reels: every moment about a topic, joined into one playable reel
+  (reuses the clip playlist builder).
+- Postgres full-text search over transcripts and screen text, when
   libraries outgrow file scanning.
-- Labels for non-MP4 uploads: remux the 480p chunks into an MP4 for
-  Rekognition.
-- Moderation flags in the UI.
+- A stronger speech model for Indian accents and mixed Hindi and English.
 - An Aurora reader in AZ B, customer-managed KMS keys, Container Insights.
 
 ### AWS services in scope
@@ -320,7 +383,7 @@ per GB.
 | Networking & delivery | VPC, Subnets, Route Tables, Internet Gateway, NAT Gateway, S3 gateway endpoint, Security Groups, Application Load Balancer, CloudFront, Route 53, ACM |
 | Storage & database | S3 (SSE-S3 encryption, lifecycle expiry on uploads/), Mountpoint for S3, Aurora PostgreSQL with the RDS Data API |
 | Orchestration | EventBridge, Step Functions (Standard) |
-| Media & AI | Rekognition Video, Amazon Bedrock (ffmpeg and whisper.cpp run in our Lambda workers) |
+| Media & AI | Amazon Bedrock (Nova Lite: summary and chapters in the pipeline, answers in the API); ffmpeg, whisper.cpp and Tesseract run in our Lambda workers |
 | Notifications | SNS |
 | Security | Cognito, IAM roles (instance, task, state machine), Secrets Manager, Systems Manager Session Manager, AWS WAF, CloudTrail |
 | Monitoring & cost | CloudWatch Logs, metrics, alarms, CloudWatch agent, AWS Budgets |
@@ -345,8 +408,10 @@ instead of deleting it.
 - Security and ops: Cognito user pool, IAM roles, Secrets Manager secrets,
   CloudTrail, CloudWatch log groups and alarms
 
-**Console (one-time):** Terraform state bucket, AWS Budget alert, Bedrock
-model access, SNS email confirmation, first Cognito user.
+**Console (one-time):** Terraform state bucket, Aurora express cluster
+(then imported), SNS email confirmation, first Cognito user. The Cognito
+sign-in page style is in Terraform (`infra/branding/settings.json`, dark
+graphite and amber to match the app).
 
 **Other tools:** `docker build` and push to ECR; the AWS CLI for manual
 checks such as reading a state machine run.
@@ -357,7 +422,9 @@ checks such as reading a state machine run.
 |---|---|---|
 | Save upload to S3 | Mountpoint for S3 on the EC2 host | Launch template user data |
 | Start the pipeline | S3 -> EventBridge rule on `uploads/*.done` | Terraform |
-| Rekognition, Bedrock, S3 writes of small results | Step Functions service integrations | State machine definition |
+| Bedrock summary, S3 writes of small results | Step Functions service integrations | State machine definition |
+| Bedrock answer (Ask) | The API, SigV4-signed with Go stdlib | `internal/awsapi` |
+| Aurora sign-in token | The API, SigV4-signed with Go stdlib | `internal/db` |
 | Run the workers | Step Functions `lambda:invoke` and a Distributed Map | State machine definition |
 | Worker S3 reads and writes | AWS SDK for Go v2, in the Lambda code only | `cmd/worker` |
 | Update video status | Step Functions -> RDS Data API -> `set_video_status` | State machine definition |
@@ -365,9 +432,9 @@ checks such as reading a state machine run.
 | Read secrets | ECS injects Secrets Manager values as env vars | Task definition |
 | Sign-in | Cognito managed login, OAuth code flow with PKCE | React app (`src/auth.ts`) |
 | Check who the user is | API downloads Cognito's JWKS over HTTPS (not an SDK call) | API middleware (`internal/cognito`) |
-| Private playback | CloudFront checks the signed cookie | CloudFront key group |
+| Playback and share files | The API checks an HMAC-signed path, one scope for owners and one for share links | `internal/storage` |
 
-No SDK, CDK or SAM is used in this repository.
+The AWS SDK appears only in `cmd/worker`. No CDK, SAM or CloudFormation.
 
 ## Status
 
@@ -430,18 +497,32 @@ To do, in build order:
       alerts at 80% actual and 100% forecast), multi-Region CloudTrail into
       its own bucket (30-day expiry), CloudWatch alarms (pipeline failed,
       worker Lambda errors and throttles, API 5xx), all to the SNS topic
-- [x] App: Aurora glass redesign (Motion), live pipeline tracker, delete
-      (S3 and Aurora), transcript panel with click to seek, search across
-      transcripts that opens the video at the moment
+- [x] App: graphite and amber theme with Motion, delete (S3 and Aurora),
+      transcript that follows playback, search that opens the video at the
+      moment
+- [x] Rekognition labels removed (not used); chunks cut to 15 s
+- [x] On-screen text search: Tesseract in the worker Lambda, `screen.json`,
+      matches marked "On screen"
+- [x] One search box: type-ahead suggestions, Enter for all results and an
+      AI answer (Nova Lite, SigV4-signed from the API) for this video or all
+      videos
+- [x] Clips with clip-only playback; share links for videos and clips
+      (7 days, shown once, own signing scope)
+- [x] Video page: player and chapters on the left, a sidebar with
+      Transcript, Clips and Summary tabs; icon buttons; processing shows a
+      percentage
+- [x] Cognito sign-in page styled from Terraform; minimum password length 8
 - [ ] WAF on CloudFront (after CloudFront)
+- [ ] Public launch: rate limits, cost check, security pass
+- [ ] Highlight reels
 
 ## How this is being built
 
 - **Frontend**: React + TypeScript + Vite + Tailwind
 - **Backend**: Go (Gin) API, Postgres, no AWS SDK (signs its Aurora IAM
-  token with stdlib SigV4)
-- **Workers**: one `cmd/worker` Lambda image with ffmpeg and whisper.cpp and
-  three operations (`split`, `chunk`, `assemble`). Lambda cannot use
+  token and Bedrock calls with stdlib SigV4)
+- **Workers**: one `cmd/worker` Lambda image with ffmpeg, whisper.cpp and
+  Tesseract and three operations (`split`, `chunk`, `assemble`). Lambda cannot use
   Mountpoint, so this is the one place the AWS SDK is used (S3 get and put)
 - **Infrastructure**: AWS Console to learn each service, then Terraform
 
@@ -451,7 +532,8 @@ To do, in build order:
 backend/
   cmd/server/         API server entrypoint
   cmd/worker/         Lambda entrypoint (split, chunk, assemble; S3 via SDK)
-  internal/worker/    ffmpeg, whisper.cpp, playlist and transcript stitching
+  internal/worker/    ffmpeg, whisper.cpp, Tesseract, playlist and transcript stitching
+  internal/awsapi/    stdlib SigV4 signer and the Bedrock Converse client
   internal/config/    env-based configuration
   internal/db/        Postgres connection + embedded SQL migrations
   internal/models/    shared data types
@@ -463,10 +545,13 @@ backend/
 frontend/
   src/api/            typed API client
   src/context/        auth context
-  src/pages/          Login, Register, Dashboard, Upload, VideoDetail
-  src/components/     shared UI pieces
-infra/
-  Terraform (in progress)
+  src/pages/          Dashboard, Upload, VideoDetail, Search, SharePage, AuthCallback
+  src/components/     Shell (top bar, search), AskCard, ClipsPanel, ClipControls, Icons, VideoCard
+  src/lib/            clip playlist builder, search snippets, time helpers
+infra/                base stack: S3, Lambda, Step Functions, Aurora, Cognito, ops
+infra/app/            app stack (hourly-billed): ALB, API Auto Scaling group, ECS services
+infra/branding/       Cognito sign-in page style
+docs/designs/         feature specs (Ask, clips and share links)
 ```
 
 ## Running locally
@@ -486,27 +571,32 @@ COGNITO_USER_POOL_ID="$(terraform -chdir=../infra output -raw cognito_user_pool_
 COGNITO_CLIENT_ID="$(terraform -chdir=../infra output -raw cognito_client_id)" \
 go run ./cmd/server
 
-# Frontend
+# Frontend: write the Cognito settings once, then plain npm run dev
 cd frontend
 npm install
-VITE_COGNITO_DOMAIN="$(terraform -chdir=../infra output -raw cognito_domain)" \
-VITE_COGNITO_CLIENT_ID="$(terraform -chdir=../infra output -raw cognito_client_id)" \
+printf 'VITE_COGNITO_DOMAIN=%s\nVITE_COGNITO_CLIENT_ID=%s\n' \
+  "$(terraform -chdir=../infra output -raw cognito_domain)" \
+  "$(terraform -chdir=../infra output -raw cognito_client_id)" > .env.local
 npm run dev
 ```
 
 Open `http://localhost:5173` and sign up on the Cognito page. Uploads are
 saved under `backend/data/`, which the pipeline never sees.
 
-**Hybrid mode (local app, real pipeline):** mount the bucket with
-Mountpoint for S3 and point the API at it and at Aurora. Uploads then land
-in S3 and the Lambda pipeline processes them:
+**Hybrid mode (local app, real pipeline):** this is how the app runs until
+CloudFront is up. Mount the bucket with Mountpoint for S3 and start the API
+with `backend/run-hybrid.sh`, which loads your AWS CLI credentials and reads
+the Aurora endpoint and Cognito IDs from the Terraform outputs. Uploads land
+in S3, the Lambda pipeline processes them, and Ask calls Bedrock with your
+CLI credentials:
 
 ```bash
 mount-s3 <bucket> ~/mnt/videos --region ap-south-1 --allow-delete
-cd backend && eval "$(aws configure export-credentials --format env)" && \
-  DB_IAM_HOST=<cluster endpoint> LOCAL_DATA_DIR=$HOME/mnt/videos REQUIRE_MOUNT=true \
-  COGNITO_USER_POOL_ID=... COGNITO_CLIENT_ID=... go run ./cmd/server
+backend/run-hybrid.sh
 ```
+
+The API runs its SQL migrations on every start (`internal/db/migrations`,
+all idempotent): `0004` adds `clips`, `0005` adds `share_links`.
 
 ## Environment variables
 
@@ -527,7 +617,13 @@ Every variable has a local-dev default.
 | `DB_IAM_HOST` | _(empty)_ | Aurora endpoint; when set, the API connects with an IAM token it signs itself instead of `DATABASE_URL` |
 | `DB_USER` | `api` | Database user for IAM sign-in |
 | `DB_NAME` | `videointell` | Database name for IAM sign-in |
-| `AWS_REGION` | `ap-south-1` | Region for the IAM token and the Cognito issuer |
+| `AWS_REGION` | `ap-south-1` | Region for the IAM token, Bedrock and the Cognito issuer |
+| `BEDROCK_MODEL_ID` | `apac.amazon.nova-lite-v1:0` | Inference profile the Ask answer uses |
+| `MAX_UPLOAD_MB` | `1024` | Largest upload; checked when the video is created and while the file is written |
+| `MAX_UPLOADS_PER_DAY` | `3` | New videos per user in any 24 hours |
+| `MAX_UPLOADS_PER_DAY_TOTAL` | `30` | New videos across the whole site in any 24 hours; caps the Lambda spend |
+| `ASK_PER_HOUR` | `30` | AI answers per user per hour (counted in the API's memory) |
+| `MAX_USERS` | `100` | Accounts allowed; a new sign-in past this gets "sign-ups are full" |
 
 ### Worker
 
@@ -545,6 +641,7 @@ docker build --provenance=false -t $REPO:latest -f backend/Dockerfile.worker bac
 | `WHISPER_MODEL` | `/models/whisper.bin` in the image | whisper.cpp model file |
 | `TESSERACT_BIN` | `/usr/bin/tesseract` in the image | Reads on-screen text every 3 s into `screen.json`; empty skips it |
 | `CHUNK_SECONDS` | `15` (Terraform `chunk_seconds`) | Chunk length for the fan-out |
+| `MAX_VIDEO_MINUTES` | `20` (Terraform `max_video_minutes`) | Split refuses longer videos before any chunk work, so the pipeline marks them failed |
 
 Terraform variables: `max_chunk_workers` (Map concurrency, 1000),
 `worker_memory_mb` (10240; use 3008 if the account caps Lambda memory).
@@ -553,7 +650,7 @@ folder in place of S3.
 
 ### Frontend
 
-Put these in `frontend/.env` (git-ignored; Vite loads it automatically).
+Put these in `frontend/.env.local` (git-ignored; Vite loads it automatically).
 
 | Variable | Default | Description |
 |---|---|---|

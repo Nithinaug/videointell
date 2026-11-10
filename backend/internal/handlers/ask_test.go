@@ -60,3 +60,18 @@ func TestMergeItemsOrdersSpeechAndScreen(t *testing.T) {
 		t.Fatalf("items = %+v", items)
 	}
 }
+
+func TestLongVideoFallsBackToMatchingLines(t *testing.T) {
+	items := make([]askItem, 0, 1000)
+	for i := 0; i < 1000; i++ {
+		items = append(items, askItem{FromMS: int64(i), Text: strings.Repeat("filler ", 10), Kind: "speech"})
+	}
+	items[500].Text = "the deploy failed on port 5432"
+	if itemChars(items) <= maxVideoAskChars {
+		t.Fatalf("test transcript too short: %d", itemChars(items))
+	}
+	lines, _ := pickContext([]askVideo{{video: models.Video{ID: "v"}, items: items}}, "why did the deploy fail", false)
+	if len(lines) != 3 || lines[1].Text != "the deploy failed on port 5432" {
+		t.Fatalf("lines = %d %+v", len(lines), lines)
+	}
+}

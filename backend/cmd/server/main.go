@@ -40,18 +40,24 @@ func main() {
 		if err := storage.CheckMount(cfg.LocalDataDir); err != nil {
 			log.Fatalf("storage: %v", err)
 		}
+		if cfg.JWTSecret == "dev-secret-change-me" || len(cfg.JWTSecret) < 32 {
+			log.Fatalf("JWT_SECRET must be set to at least 32 random characters when REQUIRE_MOUNT=true")
+		}
 	}
 	local := storage.NewLocalStorage(cfg.LocalDataDir, cfg.JWTSecret)
-	videoHandler := &handlers.VideoHandler{Store: st, Storage: local}
-	files := &handlers.FilesHandler{Store: st, Storage: local}
+	maxBytes := cfg.MaxUploadMB << 20
+	videoHandler := &handlers.VideoHandler{Store: st, Storage: local, MaxBytes: maxBytes, MaxPerDay: cfg.MaxUploadsPerDay, MaxTotalPerDay: cfg.MaxUploadsTotal}
+	files := &handlers.FilesHandler{Store: st, Storage: local, MaxBytes: maxBytes}
+	clips := &handlers.ClipHandler{Videos: videoHandler}
 	log.Printf("storage: %s", cfg.LocalDataDir)
 
 	r := router.New(router.Deps{
 		VideoHandler: videoHandler,
 		Files:        files,
-		Clips:        &handlers.ClipHandler{Videos: videoHandler},
-		Ask:          &handlers.AskHandler{Videos: videoHandler, AI: awsapi.NewBedrock(cfg.AWSRegion, cfg.BedrockModel)},
-		Auth:         handlers.AuthMiddleware(verifier, st),
+		Clips:        clips,
+		Shares:       &handlers.ShareHandler{Clips: clips},
+		Ask:          handlers.NewAskHandler(videoHandler, awsapi.NewBedrock(cfg.AWSRegion, cfg.BedrockModel), cfg.AskPerHour),
+		Auth:         handlers.AuthMiddleware(verifier, st, cfg.MaxUsers),
 	})
 
 	log.Printf("video-intell API listening on :%s", cfg.Port)

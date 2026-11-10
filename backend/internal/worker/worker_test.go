@@ -151,3 +151,23 @@ func TestPipelineEndToEnd(t *testing.T) {
 		t.Errorf("transcript.vtt:\n%s", vttRaw)
 	}
 }
+
+func TestSplitRefusesLongVideo(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	data, scratch := t.TempDir(), t.TempDir()
+	key := "uploads/u1/2-long.mp4"
+	src := filepath.Join(data, key)
+	os.MkdirAll(filepath.Dir(src), 0o755)
+	gen := exec.Command("ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=5:duration=90", "-c:v", "libx264", "-preset", "ultrafast", src)
+	if out, err := gen.CombinedOutput(); err != nil {
+		t.Fatalf("make test video: %v\n%s", err, out)
+	}
+	SetMaxMinutes(1)
+	defer func() { maxSeconds = 0 }()
+	_, err := Split(context.Background(), dirStore(data), Tools{ScratchDir: scratch}, Event{Op: "split", Bucket: "b", VideoKey: key})
+	if err == nil || !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("Split err = %v, want a length limit error", err)
+	}
+}

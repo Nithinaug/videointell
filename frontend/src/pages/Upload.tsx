@@ -70,7 +70,7 @@ export default function Upload() {
     setProgress(0)
     try {
       const contentType = file.type || 'video/mp4'
-      const { video, upload_url } = await createVideo(title || file.name, file.name, contentType)
+      const { video, upload_url } = await createVideo(title || file.name, file.name, contentType, file.size)
       await uploadFile(upload_url, file, contentType, setProgress)
       setDone(true)
       setTimeout(() => navigate(`/videos/${video.id}`), 700)
@@ -149,6 +149,7 @@ export default function Upload() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Team meeting"
+              maxLength={200}
               disabled={busy}
               className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition-colors placeholder:text-slate-500 focus:border-amber-400/60"
             />

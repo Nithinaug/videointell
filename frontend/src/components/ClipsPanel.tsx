@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { createClip, deleteClip, listClips, type Clip } from '../api/client'
+import { createClip, createShare, deleteClip, listClips, type Clip } from '../api/client'
+import { CheckIcon, ShareIcon, TrashIcon } from './Icons'
 import { clock } from '../lib/time'
 
 const MAX_SECONDS = 300
@@ -12,6 +13,18 @@ export default function ClipsPanel({ videoId, time, duration, activeId, onPlay }
   const [title, setTitle] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  async function onShare(clip: Clip) {
+    try {
+      const { token } = await createShare(videoId, 7)
+      await navigator.clipboard.writeText(`${location.origin}/share/${token}?clip=${clip.id}`)
+      setCopied(clip.id)
+      setTimeout(() => setCopied((c) => (c === clip.id ? null : c)), 2500)
+    } catch {
+      setError('Could not create the link.')
+    }
+  }
 
   useEffect(() => {
     listClips(videoId).then(setClips).catch(() => setError('Could not load clips.'))
@@ -114,8 +127,21 @@ export default function ClipsPanel({ videoId, time, duration, activeId, onPlay }
                   </span>
                   <span className="truncate text-zinc-200">{c.title}</span>
                 </button>
-                <button onClick={() => onDelete(c)} aria-label={`Delete clip ${c.title}`} className="rounded-lg px-2 py-1 text-xs text-zinc-500 transition-colors hover:bg-red-500/15 hover:text-red-200">
-                  Delete
+                <button
+                  onClick={() => onShare(c)}
+                  aria-label={copied === c.id ? 'Link copied' : `Share clip ${c.title}`}
+                  title={copied === c.id ? 'Link copied to clipboard' : 'Share clip'}
+                  className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-colors hover:bg-white/5 ${copied === c.id ? 'text-emerald-300' : 'text-zinc-500 hover:text-white'}`}
+                >
+                  {copied === c.id ? <CheckIcon className="h-3.5 w-3.5" /> : <ShareIcon className="h-3.5 w-3.5" />}
+                </button>
+                <button
+                  onClick={() => onDelete(c)}
+                  aria-label={`Delete clip ${c.title}`}
+                  title="Delete clip"
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-zinc-500 transition-colors hover:bg-red-500/15 hover:text-red-200"
+                >
+                  <TrashIcon className="h-3.5 w-3.5" />
                 </button>
               </motion.li>
             ))}

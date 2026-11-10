@@ -48,6 +48,13 @@ func (l *LocalStorage) DirURL(prefix string) string {
 	return fmt.Sprintf("/api/results/%d/%s/%s", exp, l.sign("DIR", prefix, exp), (&url.URL{Path: prefix}).EscapedPath())
 }
 
+const shareURLTTL = 5 * time.Minute
+
+func (l *LocalStorage) ShareDirURL(prefix string) (string, int64) {
+	exp := time.Now().Add(shareURLTTL).Unix()
+	return fmt.Sprintf("/api/share-files/%d/%s/%s", exp, l.sign("SHARE", prefix, exp), (&url.URL{Path: prefix}).EscapedPath()), exp
+}
+
 func (l *LocalStorage) Verify(method, key, exp, sig string) error {
 	expUnix, err := strconv.ParseInt(exp, 10, 64)
 	if err != nil || time.Now().Unix() > expUnix {

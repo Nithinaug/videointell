@@ -69,6 +69,8 @@ func main() {
 	client := s3.NewFromConfig(cfg)
 	secs, _ := strconv.ParseFloat(os.Getenv("CHUNK_SECONDS"), 64)
 	worker.SetChunkSeconds(secs)
+	mins, _ := strconv.ParseFloat(os.Getenv("MAX_VIDEO_MINUTES"), 64)
+	worker.SetMaxMinutes(mins)
 	tools := worker.Tools{
 		ScratchDir:   os.TempDir(),
 		WhisperBin:   "whisper-cli",

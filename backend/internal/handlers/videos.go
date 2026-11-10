@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -22,15 +23,21 @@ import (
 	"videointell/backend/internal/worker"
 )
 
+const maxTitleRunes = 200
+
 type VideoHandler struct {
-	Store   *store.Store
-	Storage *storage.LocalStorage
+	Store          *store.Store
+	Storage        *storage.LocalStorage
+	MaxBytes       int64
+	MaxPerDay      int
+	MaxTotalPerDay int
 }
 
 type createVideoRequest struct {
 	Title       string `json:"title" binding:"required"`
 	Filename    string `json:"filename" binding:"required"`
 	ContentType string `json:"content_type" binding:"required"`
+	Size        int64  `json:"size"`
 }
 
 func (h *VideoHandler) Create(c *gin.Context) {
@@ -45,6 +52,37 @@ func (h *VideoHandler) Create(c *gin.Context) {
 	if !strings.HasPrefix(req.ContentType, "video/") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "content_type must be a video type"})
 		return
+	}
+	if h.MaxBytes > 0 && req.Size > h.MaxBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("videos can be at most %d MB", h.MaxBytes>>20)})
+		return
+	}
+	if utf8.RuneCountInString(strings.TrimSpace(req.Title)) > maxTitleRunes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("titles can be at most %d characters", maxTitleRunes)})
+		return
+	}
+	since := time.Now().Add(-24 * time.Hour)
+	if h.MaxPerDay > 0 {
+		n, err := h.Store.CountVideosSince(userID, since)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check your upload limit"})
+			return
+		}
+		if n >= h.MaxPerDay {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("you can upload %d videos a day; try again tomorrow", h.MaxPerDay)})
+			return
+		}
+	}
+	if h.MaxTotalPerDay > 0 {
+		n, err := h.Store.CountVideosSince("", since)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check the upload limit"})
+			return
+		}
+		if n >= h.MaxTotalPerDay {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "the site has reached today's upload limit; try again tomorrow"})
+			return
+		}
 	}
 
 	key := fmt.Sprintf("uploads/%s/%d-%s", userID, time.Now().UnixNano(), safeFilename(req.Filename))
@@ -256,8 +294,6 @@ func (h *VideoHandler) Detail(c *gin.Context) {
 	c.JSON(http.StatusOK, detail)
 }
 
-const maxUploadBytes = 5 << 30
-
 var unsafeFilenameChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
 func safeFilename(name string) string {
@@ -265,8 +301,9 @@ func safeFilename(name string) string {
 }
 
 type FilesHandler struct {
-	Store   *store.Store
-	Storage *storage.LocalStorage
+	Store    *store.Store
+	Storage  *storage.LocalStorage
+	MaxBytes int64
 }
 
 func (h *FilesHandler) verifiedKey(c *gin.Context) (string, bool) {
@@ -283,7 +320,7 @@ func (h *FilesHandler) Upload(c *gin.Context) {
 	if !ok {
 		return
 	}
-	body := http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadBytes)
+	body := http.MaxBytesReader(c.Writer, c.Request.Body, h.MaxBytes)
 	err := h.Storage.Write(key, body)
 	var tooBig *http.MaxBytesError
 	switch {
@@ -292,7 +329,7 @@ func (h *FilesHandler) Upload(c *gin.Context) {
 	case errors.Is(err, fs.ErrExist):
 		c.JSON(http.StatusConflict, gin.H{"error": "file already uploaded"})
 	case errors.As(err, &tooBig):
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "file too large"})
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("videos can be at most %d MB", h.MaxBytes>>20)})
 	default:
 		log.Printf("upload %s: %v", key, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "upload failed"})
@@ -327,19 +364,32 @@ func (h *FilesHandler) File(c *gin.Context) {
 }
 
 func (h *FilesHandler) Result(c *gin.Context) {
+	h.serveSigned(c, "DIR", func(string) bool { return true })
+}
+
+func (h *FilesHandler) ShareFile(c *gin.Context) {
+	c.Header("Referrer-Policy", "no-referrer")
+	h.serveSigned(c, "SHARE", allowShareKey)
+}
+
+func (h *FilesHandler) serveSigned(c *gin.Context, scope string, allow func(rel string) bool) {
 	key := path.Clean(strings.TrimPrefix(c.Param("key"), "/"))
 	parts := strings.SplitN(key, "/", 4)
-	if len(parts) < 4 || parts[0] != "processed" {
+	if len(parts) < 4 || parts[0] != "processed" || !allow(parts[3]) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
 	prefix := strings.Join(parts[:3], "/") + "/"
-	if err := h.Storage.Verify("DIR", prefix, c.Param("exp"), c.Param("sig")); err != nil {
+	if err := h.Storage.Verify(scope, prefix, c.Param("exp"), c.Param("sig")); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
 	file, err := h.Storage.Path(key)
 	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if info, err := os.Stat(file); err != nil || !info.Mode().IsRegular() {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}

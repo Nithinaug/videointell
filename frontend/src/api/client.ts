@@ -94,11 +94,12 @@ export async function listVideos() {
   return data.videos.filter((v) => !deleting.has(v.id)).map((v) => (v.results_url ? { ...v, results_url: API_BASE_URL + v.results_url } : v))
 }
 
-export async function createVideo(title: string, filename: string, contentType: string) {
+export async function createVideo(title: string, filename: string, contentType: string, size: number) {
   const { data } = await api.post<{ video: Video; upload_url: string }>('/api/videos', {
     title,
     filename,
     content_type: contentType,
+    size,
   })
   return data
 }
@@ -137,6 +138,25 @@ export async function createClip(videoId: string, title: string, startMS: number
 
 export async function deleteClip(videoId: string, clipId: string) {
   await api.delete(`/api/videos/${videoId}/clips/${clipId}`)
+}
+
+export async function createShare(videoId: string, days: number) {
+  const { data } = await api.post<{ token: string }>(`/api/videos/${videoId}/shares`, { days })
+  return data
+}
+
+export interface ShareView {
+  title: string
+  base: string
+  base_expires_at: number
+  clips: Clip[]
+}
+
+export async function shareView(token: string): Promise<ShareView | null> {
+  const res = await fetch(API_BASE_URL + '/api/share-view', { headers: { 'X-Share-Token': token }, referrerPolicy: 'no-referrer' })
+  if (!res.ok) return null
+  const data = (await res.json()) as ShareView
+  return { ...data, base: API_BASE_URL + data.base }
 }
 
 export interface AskResult {

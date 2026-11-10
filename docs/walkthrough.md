@@ -26,7 +26,15 @@ way to check it works. Sections are added as each build step is finished.
 | Step 6: Cognito sign-in | 15 | Done (CloudFront waiting on AWS verification) |
 | Step 7: operations | 16 | Done (WAF waits for CloudFront) |
 | App features: redesign, delete, search | 17 | Done |
-| Step 8 | - | Not started |
+| On-screen text, Ask, clips, share links | 18-21 | Done |
+| Sign-in page style and local hybrid mode | 22-23 | Done |
+| Step 8: demo, public launch, teardown | - | Not started |
+
+> **Read the early sections as history.** Sections 6 to 10 built an EC2
+> worker and a Rekognition step. Section 14 replaced the worker with Lambda,
+> and Rekognition was removed later (its labels were not used). The
+> sections are kept because they show how each service is set up; the
+> boxes marked **Changed later** say what the current build does instead.
 
 ## The big picture
 
@@ -34,20 +42,25 @@ way to check it works. Sections are added as each build step is finished.
 browser -> API (Go) -> writes video to a folder that is really S3 (Mountpoint)
                        then writes an empty "<video>.done" file next to it
 S3 "Object Created" for *.done -> EventBridge rule -> Step Functions pipeline:
-   1. ECS task on an EC2 instance: Go worker runs ffmpeg + whisper.cpp
-   2. Rekognition finds labels in the video
-   3. Bedrock (Nova Lite) writes a summary, chapters and tags
-   4. SNS sends an email
+   1. Lambda split -> Distributed Map of Lambdas, one per 15 s chunk:
+      ffmpeg HLS + thumbnails, whisper.cpp transcript, Tesseract screen text
+      -> Lambda assemble joins them
+   2. Bedrock (Nova Lite) writes a summary and chapters
+   3. Aurora: video marked ready (RDS Data API), SNS sends an email
+The API also answers questions (Ask) by calling Bedrock itself.
 ```
 
 Three rules shape every choice:
 
-1. **Serverful:** our code runs on EC2 instances we size, managed by ECS.
-2. **No AWS SDK in our code:** AWS services call each other, set up in
-   Terraform. Our Go code only does HTTP, SQL and files.
+1. **Best resource per job:** the API runs on ECS on EC2; the heavy
+   processing runs as a Lambda fan-out.
+2. **AWS SDK only in the Lambda worker:** everything else is wired in
+   Terraform. The API signs its two AWS calls itself with Go's standard
+   library: the Aurora sign-in token and the Bedrock answer.
 3. **Spend only Free plan credits:** the account stays on the AWS Free plan.
    MediaConvert and Transcribe are blocked on that plan, so our own worker
-   does transcoding (ffmpeg) and transcription (whisper.cpp).
+   does transcoding (ffmpeg), transcription (whisper.cpp) and OCR
+   (Tesseract).
 
 ---
 
@@ -531,6 +544,12 @@ never reach S3. With this set, the worker refuses to start instead.
 **What:** a Standard state machine started by the EventBridge rule. It uses
 **JSONata** expressions (`{% ... %}`) to read and shape data.
 
+> **Changed later:** `ProcessVideo` became the Lambda split, Distributed Map
+> and assemble steps (section 14), and the Rekognition states
+> (`StartLabelDetection` to `SaveLabels`) were removed along with their IAM
+> permissions. The rest of this section still describes how the state
+> machine, `Init`, retries and failure emails work.
+
 ```text
 Init                 work out the video key and the processed/ folder
 ProcessVideo         run the worker task on ECS and wait for it to finish
@@ -691,6 +710,10 @@ aws s3api put-object --bucket <bucket> --key uploads/u1/1-test.mp4.done
 chapters, tags and Rekognition labels. No AWS setup in this step: it is
 app code only (Go API and React).
 
+> **Changed later:** the tags and labels cards are gone, and the page layout
+> is now the studio sidebar described in section 17. How the signed results
+> folder works (below) is unchanged.
+
 **How the files reach the browser:**
 
 1. The video detail call (`GET /api/videos/:id`) returns `results_url`:
@@ -817,8 +840,8 @@ parallel by a Step Functions Distributed Map.
 
 **Why Lambda:** the EC2 worker needed about 3.5 minutes to start an
 instance for every video and handled one video per instance. Lambda starts
-in seconds, costs nothing when idle, and runs one function per 30-second
-chunk, so a long video finishes about as fast as a short one. Measured:
+in seconds, costs nothing when idle, and runs one function per 15-second
+chunk (30 s at first), so a long video finishes about as fast as a short one. Measured:
 58 s for the test clip, against about 220 s before.
 
 **How the pipeline runs now:**
@@ -828,12 +851,13 @@ chunk, so a long video finishes about as fast as a short one. Measured:
    `work/` (deleted by an S3 lifecycle rule after one day).
 2. `Chunks` (Distributed Map, up to 1,000 at once, child workflows of type
    STANDARD so a slow chunk is not cut at 5 minutes): one Lambda per chunk
-   makes the HLS segments, the thumbnails that fall in its time range and
-   the whisper transcript, shifted to the chunk's start.
+   makes the HLS segments, the thumbnails that fall in its time range, the
+   on-screen text (section 18) and the whisper transcript, all shifted to
+   the chunk's start.
 3. `Assemble` (Lambda): joins the per-chunk playlists with
-   `#EXT-X-DISCONTINUITY` between chunks, joins the transcripts, and writes
-   `transcript.vtt` and `bedrock-request.json`.
-4. In parallel with 1 to 3, Rekognition reads the original upload.
+   `#EXT-X-DISCONTINUITY` between chunks, joins the transcripts and screen
+   text, and writes `transcript.vtt`, `screen.json` and
+   `bedrock-request.json`.
 
 **API to Aurora:** the API connects as the `api` database user. For each
 new connection it signs an IAM token itself (SigV4 with the Go standard
@@ -923,15 +947,15 @@ so local development works without HTTPS.
 2. **App clients** -> the client -> **Login pages**: scopes `openid`,
    `email`; grant type **Authorization code**; no client secret.
 3. **Domain**: a Cognito prefix domain, managed login (version 2).
-4. **Managed login** -> **Styles** -> edit: dark mode, page background
-   `#07090c`, form `#0f141b`, primary button `#38bdf8`.
+4. **Managed login** -> **Styles**: see section 22 (the style now comes
+   from Terraform).
 
 ### Terraform
 
-`infra/cognito.tf`: user pool (Essentials tier, email sign-in, 12
+`infra/cognito.tf`: user pool (Essentials tier, email sign-in, 8
 character passwords, deletion protection on), domain, the `web` app client
-(callbacks for localhost and, when on, CloudFront) and a branding resource
-that ignores later Console edits.
+(callbacks for localhost and, when on, CloudFront) and the managed login
+style read from `infra/branding/settings.json` (section 22).
 
 `infra/cloudfront.tf`: the distribution (HTTPS on `*.cloudfront.net`,
 `/assets/*` cached, everything else passed to the ALB uncached). It is
@@ -941,14 +965,8 @@ ALB accepts traffic only from CloudFront's managed prefix list.
 
 ### Check it
 
-```bash
-cd backend && COGNITO_USER_POOL_ID="$(terraform -chdir=../infra output -raw cognito_user_pool_id)" \
-  COGNITO_CLIENT_ID="$(terraform -chdir=../infra output -raw cognito_client_id)" go run ./cmd/server
-cd frontend && VITE_COGNITO_DOMAIN="$(terraform -chdir=../infra output -raw cognito_domain)" \
-  VITE_COGNITO_CLIENT_ID="$(terraform -chdir=../infra output -raw cognito_client_id)" npm run dev
-```
-
-Open `http://localhost:5173`, create an account, enter the emailed code:
+Start the API and frontend as in section 23, then open
+`http://localhost:5173`, create an account, enter the emailed code:
 the dashboard loads. `go test ./internal/cognito/` checks that tokens with
 the wrong audience, issuer, `token_use`, signing key, or an old expiry are
 refused.
@@ -994,32 +1012,255 @@ A failed run then sends both the pipeline's own failure email and, within
 
 ---
 
-## 17. App features: redesign, delete, search
+## 17. App features: look, layout, delete, search
 
 No AWS setup: app code only.
 
-- **Look:** a dark "aurora glass" style: slow moving colour glows behind
-  frosted glass cards, a bento grid with the newest video large, cards that
-  tilt toward the cursor, page transitions where the card thumbnail grows
-  into the player (Motion `layoutId`), and a drag-and-drop upload with a
-  progress ring. Everything stops moving under the system's reduced-motion
-  setting.
-- **Live pipeline tracker:** while a video is processed, the page shows
-  Queued, Split, Chunks done out of total, Labels, Stitch and Summary,
-  every 3 seconds. The API works it out from files: `progress.json`
-  (written by Split with the chunk count), `work/.../done_NNNN` (one per
-  finished chunk), then `bedrock-request.json`, `labels.json` and
-  `summary.json`.
-- **Delete:** the trash icon on a card or the Delete button on the video
-  page. It removes everything in S3 for the video and its database row, and
-  is refused while the video is queued or processing.
-- **Transcript panel:** every spoken line with its time; click to jump, and
-  the current line is highlighted and kept in view.
-- **Search:** the nav box searches what was said in all ready videos. Each
-  result shows the thumbnail at that moment and opens the video playing
-  from that second.
+- **Look:** dark graphite with one amber accent, frosted glass panels, a
+  bento grid with the newest video large, cards that tilt toward the
+  cursor, and page transitions where the card thumbnail grows into the
+  player (Motion `layoutId`). Everything stops moving under the system's
+  reduced-motion setting.
+- **Top bar:** a Home icon, the search box in the middle, and Upload and
+  Sign out icons. Action buttons across the app are icons with tooltips and
+  screen-reader labels.
+- **Video page:** the player and chapter strip on the left; a sidebar on
+  the right with **Transcript**, **Clips** and **Summary** tabs that stays
+  in view while you scroll (it drops under the player on phones).
+- **Processing:** the player is a black box with a spinner and a
+  percentage until the video is ready. The API works the stages out from
+  files: `progress.json` (written by Split with the chunk count),
+  `work/.../done_NNNN` (one per finished chunk), then
+  `bedrock-request.json` and `summary.json`. The browser maps them to
+  5% started, 10% split, 10 to 85% as chunks finish, 95% joined, 100%
+  summary written.
+- **Upload:** a drag-and-drop box with a progress ring for sending the
+  file, then "Saving..." while the API writes it to S3 through the mount.
+- **Delete:** the trash icon on a card or on the video page. It removes the
+  video's files in S3 and its database row (clips and share links go with
+  it), and is refused while the video is queued or processing. The video
+  disappears at once; the files are removed in the background.
+- **Transcript:** every spoken line with its time; click to jump, and the
+  current line is highlighted and kept in view.
+- **Search:** see section 19.
 
 ### Check it
 
 `go test ./...` in `backend/` covers the delete (a video's files go,
 another video's files stay, `..` is refused) and the search word matching.
+
+---
+
+## 18. On-screen text (OCR)
+
+**What:** every 3 seconds of video, the worker reads the text in the frame
+(slides, code, terminal output, UI labels), so search can find what was
+shown, not only what was said. Tesseract OCR runs inside the same chunk
+Lambda, so there is no new AWS service and no extra cost beyond a few
+seconds of Lambda time per chunk.
+
+**How it works:**
+
+1. In each chunk, ffmpeg grabs one frame per 3 seconds (greyscale, at most
+   1600 px wide) and `tesseract ... tsv` reads it.
+2. Only words Tesseract is at least 70% sure of are kept, and lines with
+   more symbols than letters are dropped.
+3. Frames that share 70% or more of their words with the previous one count
+   as the same screen and are stored once, so a dashboard where only a
+   number changes is not repeated.
+4. `Assemble` joins every chunk's text into
+   `processed/<user>/<file>/screen.json` (`{"frames":[{"from_ms","text"}]}`).
+5. Search marks these matches **On screen** and lists a match only where
+   the text first appears, with a short snippet around the word.
+
+### Console
+
+Nothing new. The worker image gets two packages
+(`tesseract-ocr tesseract-ocr-eng`) and the environment variable
+`TESSERACT_BIN=/usr/bin/tesseract`; with it empty, OCR is skipped.
+
+### Terraform
+
+No change. Rebuild and push the worker image (README, "Worker"), then
+`terraform apply` so the Lambda points at the new image digest.
+
+### Check it
+
+`go test ./internal/worker/` draws "ECONNREFUSED on port 5432" into a test
+frame and checks that real Tesseract reads it, and that the full pipeline
+writes `screen.json`. On AWS, upload a screen recording, then search a word
+that is only on screen.
+
+---
+
+## 19. Search and Ask
+
+**What:** one search box. Typing shows up to 6 matching moments under the
+box; Enter shows all results and an **AI answer** from Amazon Nova Lite
+with clickable timestamps. On a video page it searches and asks about that
+video; elsewhere, about all your videos.
+
+**How the answer is built (`POST /api/ask`):**
+
+1. The API picks the lines to send. For one video: the whole transcript
+   and screen text in time order (cut at 300,000 characters). For all
+   videos: the lines that contain a non-stop word of the question, plus one
+   line each side, at most 30 lines and 12,000 characters.
+2. It numbers the lines and asks Nova Lite to answer only from them and
+   reply with JSON: `{"answer": "...", "sources": [line numbers]}`. A
+   keyword instead of a question gets a short explanation.
+3. Sources are mapped back to the numbered lines, so every timestamp is a
+   real moment; a reply with no valid source shows "Couldn't find an
+   answer".
+
+**The Bedrock call without the SDK:** the API calls
+`https://bedrock-runtime.<region>.amazonaws.com/model/<id>/converse` and
+signs it with SigV4 written with Go's standard library
+(`internal/awsapi/sigv4.go`). The `:` in the model id is sent as `%3A` and
+signed as `%253A`; getting that wrong makes every call fail with a
+signature error. A test checks the signer against AWS's published example.
+
+**Network:** the API instances sit in public subnets with public IPs and an
+internet gateway, so they reach Bedrock with no NAT Gateway or VPC
+endpoint. Locally, `run-hybrid.sh` uses your AWS CLI credentials.
+
+### Console
+
+1. **Amazon Bedrock** -> **Cross-region inference** -> check that
+   `apac.amazon.nova-lite-v1:0` is listed in `ap-south-1`. Nova is an Amazon
+   model, so it works on the Free plan; Anthropic models do not (they are
+   sold through Marketplace).
+2. **IAM** -> the API task role -> add `bedrock:InvokeModel` on the
+   inference profile ARN and `arn:aws:bedrock:*::foundation-model/amazon.nova-lite-v1:0`.
+
+### Terraform
+
+`infra/outputs.tf` exports `bedrock_profile_id`, `bedrock_profile_arn` and
+`bedrock_model_arn` (the pipeline and the API use the same values).
+`infra/app/app.tf` adds `aws_iam_role_policy.api_task_bedrock` and sets
+`BEDROCK_MODEL_ID` in the API container.
+
+### Check it
+
+```bash
+aws bedrock list-inference-profiles --region ap-south-1 --query "inferenceProfileSummaries[?inferenceProfileId=='apac.amazon.nova-lite-v1:0'].status" --output text
+```
+
+It should print `ACTIVE`. Then open a video, type a question and press
+Enter; the API log shows `ask: N lines, tokens in=... out=...` for each
+answer.
+
+---
+
+## 20. Clips
+
+**What:** save a time range of 1 second to 5 minutes. Clicking a clip plays
+only that range, on its own timeline from 0:00; clicking it again goes back
+to the full video. Nothing is re-encoded.
+
+**How clip-only playback works:** the browser reads the HLS playlist,
+keeps only the segments that cover the clip (and the
+`#EXT-X-DISCONTINUITY` tags between chunks), and plays that small playlist
+from a blob URL with hls.js. A segment can start a few seconds before the
+clip, so the player skips that part and shows its own control bar counted
+from the clip's start.
+
+**Data:** table `clips` (migration `0004_clips.sql`), deleted along with its
+video. The database checks the title length and the 5-minute limit too.
+Every clip route first checks that the video belongs to you, and a delete
+matches both the clip id and the video id, so one user cannot delete
+another user's clip.
+
+### Check it
+
+`go test ./internal/handlers/` checks the clip rules. In the app: open a
+video, play to a start point, press **Start**, play on, press **End**,
+**Save clip**, then click the clip.
+
+---
+
+## 21. Share links
+
+**What:** the Share icon next to Delete copies a link that lets someone
+without an account watch the video, read the transcript and play its clips
+for 7 days. A clip's Share icon copies a link that opens straight into that
+clip.
+
+**How it stays safe:**
+
+1. The link is `/share/<token>`: 32 random bytes, shown once. Only its
+   SHA-256 is stored (table `share_links`, migration
+   `0005_share_links.sql`).
+2. The share page sends the token in an `X-Share-Token` header to
+   `GET /api/share-view`, so it never appears in the API's request log. The
+   API returns the title, clips and a signed folder address that lasts 5
+   minutes.
+3. That address uses its own signing scope and the route
+   `/api/share-files/...`, which serves only the player's files (summary,
+   transcript, captions, screen text, thumbnails, HLS). `bedrock-request.json`,
+   `progress.json` and directories return 404. An owner's address does not
+   work on the share route, and the reverse.
+4. The page asks for a fresh address every 4 minutes, and the player
+   rewrites every segment request to the newest one, so long videos keep
+   playing.
+5. Expired, cancelled, deleted or made-up links all show one "Link not
+   available" page. A video can have 50 active links.
+
+### Check it
+
+`go test ./internal/handlers/` checks the file allowlist and that the two
+signing scopes cannot be swapped. In the app: click Share, open the link in
+a private window (signed out).
+
+---
+
+## 22. Sign-in page style from Terraform
+
+**What:** Cognito's managed login page matches the app: dark graphite
+background, dark card, amber Sign in button and links, 12 px corners.
+
+**How:** the style was exported once with the full settings filled in,
+edited to the app's colors, and saved as `infra/branding/settings.json`.
+`aws_cognito_managed_login_branding.web` in `infra/cognito.tf` reads it, so
+the style is in code instead of Console clicks.
+
+### Console (to export the starting point)
+
+```bash
+aws cognito-idp describe-managed-login-branding --region ap-south-1 --user-pool-id <pool id> --managed-login-branding-id <style id> --return-merged-resources --query ManagedLoginBranding.Settings > infra/branding/settings.json
+```
+
+The style id is under **Cognito** -> the user pool -> **Managed login**. A
+client can have only one style, so edit the existing one instead of
+creating another.
+
+### Check it
+
+`terraform apply` shows one change on the branding resource. Sign out of
+the app and back in to see the new page.
+
+---
+
+## 23. Running in local hybrid mode
+
+**What:** until CloudFront is up, the app runs on your laptop against the
+real AWS back end: Mountpoint mounts the bucket, the API talks to Aurora
+and Bedrock, and uploads go through the real Lambda pipeline.
+
+1. Mount the bucket:
+   `mount-s3 <bucket> ~/mnt/videos --region ap-south-1 --allow-delete`
+2. Start the API with `backend/run-hybrid.sh`. It loads your AWS CLI
+   credentials and reads the Aurora endpoint and Cognito IDs from the
+   Terraform outputs.
+3. Write the frontend's Cognito settings once into `frontend/.env.local`
+   (README, "Running locally"), then `npm run dev`.
+
+**Common problems:**
+
+- A blank page whose address has `client_id=` empty: `.env.local` is
+  missing or empty; write it again and restart `npm run dev`.
+- `redirect_mismatch` from Cognito: the app is not on
+  `http://localhost:5173`; an old dev server is probably holding the port.
+- 404 on a new route: the API process is older than the code; restart it.
+- First request after a quiet spell is slow: Aurora was paused and takes
+  15 to 30 seconds to wake.

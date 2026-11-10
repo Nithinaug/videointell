@@ -30,3 +30,20 @@ func TestUserCache(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestRateLimiter(t *testing.T) {
+	r := newRateLimiter(2, time.Hour)
+	now := time.Now()
+	if !r.allow("u", now) || !r.allow("u", now) {
+		t.Fatal("first two should pass")
+	}
+	if r.allow("u", now) {
+		t.Fatal("third should be refused")
+	}
+	if !r.allow("other", now) {
+		t.Fatal("other user is separate")
+	}
+	if !r.allow("u", now.Add(time.Hour+time.Second)) {
+		t.Fatal("window should reset")
+	}
+}

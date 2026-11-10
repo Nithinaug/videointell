@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
 import Search from './pages/Search'
+import SharePage from './pages/SharePage'
 import Upload from './pages/Upload'
 import VideoDetail from './pages/VideoDetail'
 
@@ -32,6 +33,7 @@ function AppRoutes() {
     <AnimatePresence mode="popLayout" initial={false}>
       <Routes location={location} key={location.pathname}>
         <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/share/:token" element={<SharePage />} />
         <Route
           path="/"
           element={
