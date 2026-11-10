@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"videointell/backend/internal/store"
 	"videointell/backend/internal/worker"
 )
 
@@ -27,10 +28,11 @@ type ExportHandler struct {
 	Function string
 	Bucket   string
 	PerDay   int
+	Total    int
 }
 
-func NewExportHandler(clips *ClipHandler, lambda Invoker, function, bucket string, perDay int) *ExportHandler {
-	return &ExportHandler{Clips: clips, Lambda: lambda, Function: function, Bucket: bucket, PerDay: perDay}
+func NewExportHandler(clips *ClipHandler, lambda Invoker, function, bucket string, perDay, total int) *ExportHandler {
+	return &ExportHandler{Clips: clips, Lambda: lambda, Function: function, Bucket: bucket, PerDay: perDay, Total: total}
 }
 
 func exportState(ready, failed bool, started, now time.Time) string {
@@ -135,13 +137,13 @@ func (h *ExportHandler) Start(c *gin.Context) {
 		c.JSON(http.StatusGone, gin.H{"error": "the original upload has expired, so it cannot be exported"})
 		return
 	}
-	store := h.Clips.Videos.Storage
-	if err := store.RemoveAll(out+worker.ExportErrorFile, out+worker.ExportMarker); err != nil {
+	files := h.Clips.Videos.Storage
+	if err := files.RemoveAll(out+worker.ExportErrorFile, out+worker.ExportMarker); err != nil {
 		log.Printf("export reset %s: %v", out, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not start the export"})
 		return
 	}
-	if err := store.Write(out+worker.ExportMarker, strings.NewReader("")); err != nil {
+	if err := files.Write(out+worker.ExportMarker, strings.NewReader("")); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			c.JSON(http.StatusOK, gin.H{"state": "working"})
 			return
@@ -150,21 +152,24 @@ func (h *ExportHandler) Start(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not start the export"})
 		return
 	}
-	slot, err := h.Clips.Videos.Store.ReserveExport(v.UserID, h.PerDay)
-	if err != nil || slot == "" {
-		store.RemoveAll(out + worker.ExportMarker)
-		if err != nil {
+	slot, err := h.Clips.Videos.Store.ReserveExport(v.UserID, h.PerDay, h.Total)
+	if err != nil {
+		files.RemoveAll(out + worker.ExportMarker)
+		switch {
+		case errors.Is(err, store.ErrExportsUserFull):
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("you can export %d videos a day; try again tomorrow", h.PerDay)})
+		case errors.Is(err, store.ErrExportsSiteFull):
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "the site has reached today's HD export limit; try again tomorrow"})
+		default:
 			log.Printf("export slot %s: %v", v.ID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not start the export"})
-			return
 		}
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("you can export %d videos a day; try again tomorrow", h.PerDay)})
 		return
 	}
 	payload := worker.Event{Op: "export", Bucket: h.Bucket, VideoKey: v.OriginalKey}
 	if err := h.Lambda.InvokeAsync(c.Request.Context(), h.Function, payload); err != nil {
 		log.Printf("export invoke %s: %v", v.ID, err)
-		store.RemoveAll(out + worker.ExportMarker)
+		files.RemoveAll(out + worker.ExportMarker)
 		if err := h.Clips.Videos.Store.ReleaseExport(slot); err != nil {
 			log.Printf("export slot release %s: %v", slot, err)
 		}

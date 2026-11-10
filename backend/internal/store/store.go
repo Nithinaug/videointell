@@ -165,15 +165,28 @@ func (s *Store) RenameVideo(id, title string) (models.Video, error) {
 	return v, err
 }
 
-func (s *Store) ReserveExport(userID string, perDay int) (string, error) {
+var (
+	ErrExportsUserFull = errors.New("user export limit reached")
+	ErrExportsSiteFull = errors.New("site export limit reached")
+)
+
+func (s *Store) ReserveExport(userID string, perDay, totalPerDay int) (string, error) {
 	var id string
 	err := s.db.Get(&id, `INSERT INTO exports (user_id)
 		SELECT $1 WHERE (SELECT count(*) FROM exports WHERE user_id = $1 AND created_at > now() - interval '1 day') < $2
-		RETURNING id`, userID, perDay)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
+		AND (SELECT count(*) FROM exports WHERE created_at > now() - interval '1 day') < $3
+		RETURNING id`, userID, perDay, totalPerDay)
+	if !errors.Is(err, sql.ErrNoRows) {
+		return id, err
 	}
-	return id, err
+	var total int
+	if err := s.db.Get(&total, `SELECT count(*) FROM exports WHERE created_at > now() - interval '1 day'`); err != nil {
+		return "", err
+	}
+	if total >= totalPerDay {
+		return "", ErrExportsSiteFull
+	}
+	return "", ErrExportsUserFull
 }
 
 func (s *Store) ReleaseExport(id string) error {

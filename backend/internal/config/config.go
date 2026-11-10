@@ -26,6 +26,7 @@ type Config struct {
 	WorkerFunction   string
 	VideoBucket      string
 	ExportsPerDay    int
+	ExportsTotal     int
 }
 
 func Load() Config {
@@ -50,6 +51,7 @@ func Load() Config {
 		WorkerFunction:   os.Getenv("WORKER_FUNCTION"),
 		VideoBucket:      os.Getenv("VIDEO_BUCKET"),
 		ExportsPerDay:    getInt("EXPORTS_PER_DAY", 5),
+		ExportsTotal:     getInt("EXPORTS_PER_DAY_TOTAL", 20),
 	}
 }
 

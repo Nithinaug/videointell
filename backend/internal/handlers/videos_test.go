@@ -74,3 +74,39 @@ func TestContainsAll(t *testing.T) {
 		}
 	}
 }
+
+func TestIsVideoFilename(t *testing.T) {
+	for name, want := range map[string]bool{
+		"clip.mp4": true, "Phone.MOV": true, "a.webm": true, "b.3gp": true,
+		"x.html": false, "x.svg": false, "x.mp4.html": false, "noext": false, "x.mp4.done": false,
+	} {
+		if got := isVideoFilename(name); got != want {
+			t.Errorf("isVideoFilename(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestFilesAreInert(t *testing.T) {
+	dir := t.TempDir()
+	key := "uploads/u1/1-x.html"
+	os.MkdirAll(filepath.Join(dir, "uploads/u1"), 0o755)
+	os.WriteFile(filepath.Join(dir, key), []byte("<script>alert(1)</script>"), 0o644)
+	os.MkdirAll(filepath.Join(dir, "processed/u1/a.mp4"), 0o755)
+	os.WriteFile(filepath.Join(dir, "processed/u1/a.mp4/summary.json"), []byte("{}"), 0o644)
+	st := storage.NewLocalStorage(dir, "secret")
+	h := &FilesHandler{Storage: st}
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/api/files/*key", h.File)
+	r.GET("/api/results/:exp/:sig/*key", h.Result)
+	for _, url := range []string{st.PlaybackURL(key), st.DirURL("processed/u1/a.mp4/") + "summary.json"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", url, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d", url, w.Code)
+		}
+		if w.Header().Get("X-Content-Type-Options") != "nosniff" || !strings.Contains(w.Header().Get("Content-Security-Policy"), "sandbox") {
+			t.Errorf("GET %s missing inert headers: %v", url, w.Header())
+		}
+	}
+}

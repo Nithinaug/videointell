@@ -103,7 +103,7 @@ func readScreen(t Tools, src, dir string, ev Event) ([]ScreenText, error) {
 		at := float64(k * screenEverySeconds)
 		frame := filepath.Join(dir, "screen.png")
 		offset := strconv.FormatFloat(max(0, min(at-ev.Start, ev.Duration-0.25)), 'f', 3, 64)
-		if err := ffmpeg("-ss", offset, "-i", src, "-frames:v", "1", "-vf", "scale='min(1600,iw)':-2,format=gray", frame); err != nil {
+		if err := ffmpeg("-noautorotate", "-ss", offset, "-i", src, "-frames:v", "1", "-vf", rotateFilter(ev.Rotation)+"scale='min(1600,iw)':-2,format=gray", frame); err != nil {
 			return nil, err
 		}
 		raw, err := exec.Command(t.TesseractBin, frame, "stdout", "-l", "eng", "--psm", "3", "tsv").Output()

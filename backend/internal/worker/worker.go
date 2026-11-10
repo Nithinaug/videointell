@@ -63,6 +63,7 @@ type Event struct {
 	Start      float64     `json:"start"`
 	Duration   float64     `json:"duration"`
 	HasAudio   bool        `json:"hasAudio"`
+	Rotation   int         `json:"rotation,omitempty"`
 	Renditions []Rendition `json:"renditions,omitempty"`
 	Chunks     []Event     `json:"chunks,omitempty"`
 }
@@ -73,6 +74,7 @@ type source struct {
 	Width, Height int
 	HasAudio      bool
 	Seconds       float64
+	Rotation      int
 }
 
 func OutputPrefix(videoKey string) (string, error) {
@@ -123,7 +125,7 @@ func Split(ctx context.Context, st Store, t Tools, ev Event) (Event, error) {
 		return Event{}, err
 	}
 	defer f.Close()
-	out := Event{Op: "assemble", Bucket: ev.Bucket, VideoKey: ev.VideoKey, HasAudio: info.HasAudio, Renditions: renditionsFor(info)}
+	out := Event{Op: "assemble", Bucket: ev.Bucket, VideoKey: ev.VideoKey, HasAudio: info.HasAudio, Rotation: info.Rotation, Renditions: renditionsFor(info)}
 	sc := bufio.NewScanner(f)
 	for i := 0; sc.Scan(); i++ {
 		fields := strings.Split(sc.Text(), ",")
@@ -137,7 +139,7 @@ func Split(ctx context.Context, st Store, t Tools, ev Event) (Event, error) {
 		}
 		out.Chunks = append(out.Chunks, Event{
 			Op: "chunk", Bucket: ev.Bucket, VideoKey: ev.VideoKey, Index: i,
-			Start: start, Duration: end - start, HasAudio: info.HasAudio, Renditions: out.Renditions,
+			Start: start, Duration: end - start, HasAudio: info.HasAudio, Rotation: info.Rotation, Renditions: out.Renditions,
 		})
 	}
 	if err := sc.Err(); err != nil {
@@ -174,9 +176,10 @@ func Chunk(ctx context.Context, st Store, t Tools, ev Event) error {
 			return err
 		}
 		playlist := filepath.Join(rdir, "index.m3u8")
+		short := min(r.Width, r.Height)
 		err := ffmpeg(
-			"-i", src, "-map", "0:v:0", "-map", "0:a:0?",
-			"-vf", fmt.Sprintf("scale=-2:%d", r.Height),
+			"-noautorotate", "-i", src, "-map", "0:v:0", "-map", "0:a:0?",
+			"-vf", fmt.Sprintf("%sscale=w='if(gt(iw,ih),-2,%d)':h='if(gt(iw,ih),%d,-2)'", rotateFilter(ev.Rotation), short, short),
 			"-c:v", "libx264", "-preset", "veryfast", "-profile:v", "main", "-pix_fmt", "yuv420p",
 			"-b:v", strconv.Itoa(r.Bitrate), "-maxrate", strconv.Itoa(r.Bitrate*107/100), "-bufsize", strconv.Itoa(r.Bitrate*3/2),
 			"-g", "48", "-keyint_min", "48", "-sc_threshold", "0",
@@ -203,7 +206,7 @@ func Chunk(ctx context.Context, st Store, t Tools, ev Event) error {
 	for k := int(math.Ceil(ev.Start / thumbEverySeconds)); float64(k*thumbEverySeconds) < end; k++ {
 		thumb := filepath.Join(dir, fmt.Sprintf("thumb_%02d.jpg", k+1))
 		offset := strconv.FormatFloat(max(0, min(float64(k*thumbEverySeconds)-ev.Start, ev.Duration-0.25)), 'f', 3, 64)
-		if err := ffmpeg("-ss", offset, "-i", src, "-frames:v", "1", "-vf", "scale=-2:360", thumb); err != nil {
+		if err := ffmpeg("-noautorotate", "-ss", offset, "-i", src, "-frames:v", "1", "-vf", rotateFilter(ev.Rotation)+"scale=-2:360", thumb); err != nil {
 			return err
 		}
 		if err := st.Put(ctx, outPrefix+"thumbs/"+filepath.Base(thumb), thumb); err != nil {
@@ -335,17 +338,13 @@ func Assemble(ctx context.Context, st Store, t Tools, ev Event) error {
 }
 
 func probe(src string) (source, error) {
-	raw, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", src).Output()
+	raw, err := exec.Command("ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", src).Output()
 	if err != nil {
 		return source{}, fmt.Errorf("ffprobe: %w", err)
 	}
 	var parsed struct {
-		Streams []struct {
-			CodecType string `json:"codec_type"`
-			Width     int    `json:"width"`
-			Height    int    `json:"height"`
-		} `json:"streams"`
-		Format struct {
+		Streams []probedStream `json:"streams"`
+		Format  struct {
 			Duration string `json:"duration"`
 		} `json:"format"`
 	}
@@ -358,7 +357,10 @@ func probe(src string) (source, error) {
 		switch st.CodecType {
 		case "video":
 			if s.Height == 0 {
-				s.Width, s.Height = st.Width, st.Height
+				s.Width, s.Height, s.Rotation = st.Width, st.Height, st.rotation()
+				if s.Rotation%180 != 0 {
+					s.Width, s.Height = s.Height, s.Width
+				}
 			}
 		case "audio":
 			s.HasAudio = true
@@ -370,22 +372,69 @@ func probe(src string) (source, error) {
 	return s, nil
 }
 
+type probedStream struct {
+	CodecType string            `json:"codec_type"`
+	Width     int               `json:"width"`
+	Height    int               `json:"height"`
+	Tags      map[string]string `json:"tags"`
+	SideData  []struct {
+		Rotation *float64 `json:"rotation"`
+	} `json:"side_data_list"`
+}
+
+func (p probedStream) rotation() int {
+	deg := 0.0
+	found := false
+	for _, d := range p.SideData {
+		if d.Rotation != nil {
+			deg, found = *d.Rotation, true
+		}
+	}
+	if !found {
+		for k, v := range p.Tags {
+			if cw, err := strconv.ParseFloat(v, 64); err == nil && strings.EqualFold(k, "rotate") {
+				deg = -cw
+			}
+		}
+	}
+	return (int(math.Round(deg/90))*90%360 + 360) % 360
+}
+
+func rotateFilter(deg int) string {
+	switch deg {
+	case 90:
+		return "transpose=2,"
+	case 180:
+		return "hflip,vflip,"
+	case 270:
+		return "transpose=1,"
+	}
+	return ""
+}
+
 func renditionsFor(s source) []Rendition {
+	short := min(s.Width, s.Height)
 	var out []Rendition
 	for _, r := range ladder {
-		if r.Height <= s.Height {
+		if r.Height <= short {
 			out = append(out, r)
 		}
 	}
 	if len(out) == 0 {
-		h := s.Height &^ 1
+		n := short &^ 1
 		last := ladder[len(ladder)-1]
-		out = append(out, Rendition{Height: h, Bitrate: last.Bitrate * h / last.Height})
+		out = append(out, Rendition{Height: n, Bitrate: last.Bitrate * n / last.Height})
 	}
 	for i := range out {
-		out[i].Name = fmt.Sprintf("%dp", out[i].Height)
-		w := s.Width * out[i].Height / s.Height
-		out[i].Width = w + w%2
+		n := out[i].Height
+		out[i].Name = fmt.Sprintf("%dp", n)
+		if s.Width >= s.Height {
+			w := s.Width * n / s.Height
+			out[i].Width, out[i].Height = w+w%2, n
+		} else {
+			h := s.Height * n / s.Width
+			out[i].Width, out[i].Height = n, h+h%2
+		}
 	}
 	return out
 }

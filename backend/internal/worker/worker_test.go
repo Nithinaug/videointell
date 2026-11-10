@@ -171,3 +171,100 @@ func TestSplitRefusesLongVideo(t *testing.T) {
 		t.Fatalf("Split err = %v, want a length limit error", err)
 	}
 }
+
+func TestRenditionsForPortrait(t *testing.T) {
+	got := renditionsFor(source{Width: 1080, Height: 1920})
+	want := [][2]int{{1080, 1920}, {720, 1280}, {480, 854}}
+	if len(got) != len(want) {
+		t.Fatalf("renditionsFor = %v", got)
+	}
+	for i, w := range want {
+		if got[i].Width != w[0] || got[i].Height != w[1] {
+			t.Errorf("rung %d = %dx%d, want %dx%d", i, got[i].Width, got[i].Height, w[0], w[1])
+		}
+	}
+}
+
+func TestProbedStreamRotation(t *testing.T) {
+	ccw := 90.0
+	cases := []struct {
+		name string
+		in   probedStream
+		want int
+	}{
+		{"none", probedStream{}, 0},
+		{"display matrix", probedStream{SideData: []struct {
+			Rotation *float64 `json:"rotation"`
+		}{{Rotation: &ccw}}}, 90},
+		{"rotate tag", probedStream{Tags: map[string]string{"rotate": "90"}}, 270},
+		{"mkv tag", probedStream{Tags: map[string]string{"ROTATE": "270"}}, 90},
+		{"upside down", probedStream{Tags: map[string]string{"rotate": "180"}}, 180},
+	}
+	for _, c := range cases {
+		if got := c.in.rotation(); got != c.want {
+			t.Errorf("%s: rotation = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
+func dims(t *testing.T, path string) string {
+	t.Helper()
+	out, err := exec.Command("ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", path).Output()
+	if err != nil {
+		t.Fatalf("ffprobe %s: %v", path, err)
+	}
+	return strings.Fields(string(out))[0]
+}
+
+func TestPipelinePortraitRotation(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	chunkSeconds = 5
+	data, scratch := t.TempDir(), t.TempDir()
+	key := "uploads/u1/3-portrait.mp4"
+	src := filepath.Join(data, filepath.FromSlash(key))
+	os.MkdirAll(filepath.Dir(src), 0o755)
+	plain := filepath.Join(scratch, "plain.mp4")
+	for _, args := range [][]string{
+		{"-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=24:duration=15", "-c:v", "libx264", "-preset", "ultrafast", "-g", "24", plain},
+		{"-i", plain, "-c", "copy", "-metadata:s:v:0", "rotate=90", src},
+	} {
+		if out, err := exec.Command("ffmpeg", append([]string{"-hide_banner", "-loglevel", "error", "-y"}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("make test video: %v\n%s", err, out)
+		}
+	}
+
+	ctx, st := context.Background(), dirStore(data)
+	tools := Tools{ScratchDir: scratch}
+	plan, err := Split(ctx, st, tools, Event{Op: "split", Bucket: "b", VideoKey: key})
+	if err != nil {
+		t.Fatalf("Split: %v", err)
+	}
+	for _, c := range plan.Chunks {
+		if err := Chunk(ctx, st, tools, c); err != nil {
+			t.Fatalf("Chunk %d: %v", c.Index, err)
+		}
+	}
+	if err := Assemble(ctx, st, tools, plan); err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+
+	out := filepath.Join(data, "processed", "u1", "3-portrait.mp4")
+	master, _ := os.ReadFile(filepath.Join(out, "hls/master.m3u8"))
+	for _, res := range []string{"RESOLUTION=1080x1920", "RESOLUTION=720x1280", "RESOLUTION=480x854"} {
+		if !strings.Contains(string(master), res) {
+			t.Errorf("master playlist missing %s:\n%s", res, master)
+		}
+	}
+	for rung, want := range map[string]string{"1080p": "1080x1920", "720p": "720x1280", "480p": "480x854"} {
+		for _, c := range []string{"c0000_0000.ts", "c0002_0000.ts"} {
+			if got := dims(t, filepath.Join(out, "hls", rung, c)); got != want {
+				t.Errorf("%s/%s is %s, want %s", rung, c, got, want)
+			}
+		}
+	}
+	if got := dims(t, filepath.Join(out, "thumbs/thumb_01.jpg")); got != "202x360" {
+		t.Errorf("thumbnail is %s, want 202x360", got)
+	}
+}

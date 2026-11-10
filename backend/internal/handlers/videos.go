@@ -55,6 +55,10 @@ func (h *VideoHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "content_type must be a video type"})
 		return
 	}
+	if !isVideoFilename(req.Filename) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "upload a video file (.mp4, .mov, .webm, .mkv, .m4v, .avi or .3gp)"})
+		return
+	}
 	if h.MaxBytes > 0 && req.Size > h.MaxBytes {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("videos can be at most %d MB", h.MaxBytes>>20)})
 		return
@@ -311,6 +315,17 @@ func safeFilename(name string) string {
 	return unsafeFilenameChars.ReplaceAllString(path.Base(name), "-")
 }
 
+var videoExts = map[string]bool{".mp4": true, ".mov": true, ".webm": true, ".mkv": true, ".m4v": true, ".avi": true, ".3gp": true}
+
+func isVideoFilename(name string) bool {
+	return videoExts[strings.ToLower(path.Ext(safeFilename(name)))]
+}
+
+func inertFile(c *gin.Context) {
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Security-Policy", "sandbox; default-src 'none'")
+}
+
 type FilesHandler struct {
 	Store    *store.Store
 	Storage  *storage.LocalStorage
@@ -371,6 +386,7 @@ func (h *FilesHandler) File(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
+	inertFile(c)
 	c.File(path)
 }
 
@@ -423,6 +439,7 @@ func (h *FilesHandler) serveSigned(c *gin.Context, scope string, allow func(rel 
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
+	inertFile(c)
 	c.File(file)
 }
 

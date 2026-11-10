@@ -42,7 +42,8 @@ about a minute later you get:
   as a download. A source under 720p is scaled up, which adds size, not detail.
   The original upload must still exist (test expiry: 3 days), the video must
   fit one Lambda run of 15 minutes, and each user gets 5 exports a day
-  (`EXPORTS_PER_DAY`).
+  (`EXPORTS_PER_DAY`) with 20 a day across the whole site
+  (`EXPORTS_PER_DAY_TOTAL`), both counted in Postgres.
 - **Share menu**: the Share button opens a menu with the browser's share
   sheet where it has one, WhatsApp, Gmail, X, LinkedIn, Telegram, Copy link
   and YouTube (saves the HD file and opens YouTube's upload page). Every
