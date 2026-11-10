@@ -12,6 +12,7 @@ type Deps struct {
 	Ask          *handlers.AskHandler
 	Clips        *handlers.ClipHandler
 	Shares       *handlers.ShareHandler
+	Exports      *handlers.ExportHandler
 	Auth         gin.HandlerFunc
 }
 
@@ -42,6 +43,8 @@ func New(d Deps) *gin.Engine {
 			videos.GET("/:id/clips", d.Clips.List)
 			videos.POST("/:id/clips", d.Clips.Create)
 			videos.DELETE("/:id/clips/:clip", d.Clips.Delete)
+			videos.GET("/:id/export", d.Exports.Get)
+			videos.POST("/:id/export", d.Exports.Start)
 			videos.GET("/:id/shares", d.Shares.List)
 			videos.POST("/:id/shares", d.Shares.Create)
 			videos.DELETE("/:id/shares/:share", d.Shares.Revoke)

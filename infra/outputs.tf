@@ -10,6 +10,10 @@ output "event_log_group" {
   value = aws_cloudwatch_log_group.video_uploaded.name
 }
 
+output "worker_function" {
+  value = aws_lambda_function.worker.function_name
+}
+
 output "pipeline" {
   value = aws_sfn_state_machine.pipeline.arn
 }

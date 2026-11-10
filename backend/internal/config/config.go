@@ -23,6 +23,9 @@ type Config struct {
 	MaxUploadsTotal  int
 	AskPerHour       int
 	MaxUsers         int
+	WorkerFunction   string
+	VideoBucket      string
+	ExportsPerDay    int
 }
 
 func Load() Config {
@@ -44,6 +47,9 @@ func Load() Config {
 		MaxUploadsTotal:  getInt("MAX_UPLOADS_PER_DAY_TOTAL", 30),
 		AskPerHour:       getInt("ASK_PER_HOUR", 30),
 		MaxUsers:         getInt("MAX_USERS", 100),
+		WorkerFunction:   os.Getenv("WORKER_FUNCTION"),
+		VideoBucket:      os.Getenv("VIDEO_BUCKET"),
+		ExportsPerDay:    getInt("EXPORTS_PER_DAY", 5),
 	}
 }
 

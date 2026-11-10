@@ -85,6 +85,8 @@ func main() {
 			return worker.Split(ctx, st, tools, ev)
 		case "chunk":
 			return map[string]int{"index": ev.Index}, worker.Chunk(ctx, st, tools, ev)
+		case "export":
+			return map[string]bool{"ok": true}, worker.Export(ctx, st, tools, ev)
 		case "assemble":
 			return map[string]bool{"ok": true}, worker.Assemble(ctx, st, tools, ev)
 		}

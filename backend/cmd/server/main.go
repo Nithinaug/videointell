@@ -56,6 +56,7 @@ func main() {
 		Files:        files,
 		Clips:        clips,
 		Shares:       &handlers.ShareHandler{Clips: clips},
+		Exports:      handlers.NewExportHandler(clips, awsapi.NewLambda(cfg.AWSRegion), cfg.WorkerFunction, cfg.VideoBucket, cfg.ExportsPerDay),
 		Ask:          handlers.NewAskHandler(videoHandler, awsapi.NewBedrock(cfg.AWSRegion, cfg.BedrockModel), cfg.AskPerHour),
 		Auth:         handlers.AuthMiddleware(verifier, st, cfg.MaxUsers),
 	})

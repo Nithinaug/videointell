@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
@@ -373,7 +375,26 @@ func (h *FilesHandler) File(c *gin.Context) {
 }
 
 func (h *FilesHandler) Result(c *gin.Context) {
+	if c.Query("dl") == "1" && strings.HasSuffix(c.Param("key"), "/"+worker.ExportFile) {
+		c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": downloadName(c.Query("name"))}))
+	}
 	h.serveSigned(c, "DIR", func(string) bool { return true })
+}
+
+func downloadName(name string) string {
+	clean := []rune(strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r) || r == ' ' || r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return -1
+	}, name)))
+	if len(clean) > 80 {
+		clean = clean[:80]
+	}
+	if len(clean) == 0 {
+		return "video-hd.mp4"
+	}
+	return string(clean) + "-hd.mp4"
 }
 
 func (h *FilesHandler) ShareFile(c *gin.Context) {

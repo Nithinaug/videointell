@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { motion } from 'motion/react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Hls from 'hls.js'
-import { canDelete, createShare, deleteVideo, getProgress, renameVideo, getResults, getVideoDetail, progressPercent, type Clip, type Segment, type Results, type VideoDetail as VideoDetailT } from '../api/client'
+import { canDelete, deleteVideo, getProgress, renameVideo, getResults, getVideoDetail, progressPercent, type Clip, type Segment, type Results, type VideoDetail as VideoDetailT } from '../api/client'
 import AskCard from '../components/AskCard'
 import ClipControls from '../components/ClipControls'
 import ClipsPanel from '../components/ClipsPanel'
-import { DownloadIcon, PencilIcon, ShareIcon, TrashIcon } from '../components/Icons'
+import { DownloadIcon, PencilIcon, TrashIcon } from '../components/Icons'
 import Shell from '../components/Shell'
+import ShareMenu from '../components/ShareMenu'
+import ExportHd from '../components/ExportHd'
+import { useHdExport } from '../lib/useHdExport'
 import { loadClip } from '../lib/clip'
 import { downloadTxt, downloadVtt } from '../lib/download'
 import { firstAppearances, snippet } from '../lib/snippet'
@@ -500,11 +503,29 @@ export default function VideoDetail() {
   const [params] = useSearchParams()
   const startAt = Number(params.get('t')) || 0
   const [deleting, setDeleting] = useState(false)
-  const [sharing, setSharing] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
   const [detail, setDetail] = useState<VideoDetailT | null>(null)
   const [results, setResults] = useState<Results | null>(null)
+  const hd = useHdExport(id ?? '', !!id && detail?.video.status === 'ready')
+  const { pending: hdPending, state: hdState, clearPending: clearHdPending, downloadUrl: hdUrl } = hd
+  const resultsUrl = detail?.results_url
+  const videoTitle = detail?.video.title ?? ''
+
+  useEffect(() => {
+    if (!hdPending) return
+    if (hdState === 'failed') {
+      clearHdPending()
+      alert('The HD export failed. Try again.')
+      return
+    }
+    if (hdState !== 'ready') return
+    const url = hdUrl(resultsUrl, videoTitle)
+    clearHdPending()
+    if (!url) return
+    const a = document.createElement('a')
+    a.href = url
+    a.click()
+  }, [hdPending, hdState, clearHdPending, hdUrl, resultsUrl, videoTitle])
 
   useEffect(() => {
     if (!id) return
@@ -554,20 +575,6 @@ export default function VideoDetail() {
     navigate('/', { replace: true })
   }
 
-  async function onShare() {
-    setSharing(true)
-    try {
-      const { token } = await createShare(video.id, 7)
-      await navigator.clipboard.writeText(`${location.origin}/share/${token}`)
-      setToast('Link copied to clipboard')
-    } catch {
-      setToast('Could not create the link')
-    } finally {
-      setSharing(false)
-      setTimeout(() => setToast(null), 2500)
-    }
-  }
-
   return (
     <Shell>
       <div className="space-y-5">
@@ -600,29 +607,9 @@ export default function VideoDetail() {
               </>
             )}
             {video.status === 'ready' && (
-              <div className="relative ml-auto">
-                <button
-                  onClick={onShare}
-                  disabled={sharing}
-                  aria-label="Share"
-                  title="Share"
-                  className="grid h-9 w-9 place-items-center rounded-xl text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white disabled:opacity-50"
-                >
-                  <ShareIcon />
-                </button>
-                <AnimatePresence>
-                  {toast && (
-                    <motion.p
-                      role="status"
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                      className="absolute right-0 top-full z-20 mt-2 whitespace-nowrap rounded-lg bg-zinc-800 px-3 py-1.5 text-xs text-white shadow-xl ring-1 ring-white/10"
-                    >
-                      {toast}
-                    </motion.p>
-                  )}
-                </AnimatePresence>
+              <div className="ml-auto flex items-center gap-2">
+                <ExportHd hd={hd} resultsUrl={detail.results_url} title={video.title} />
+                <ShareMenu videoId={video.id} title={video.title} hd={hd} resultsUrl={detail.results_url} />
               </div>
             )}
             {canDelete(video.status) && (

@@ -152,6 +152,18 @@ export async function createShare(videoId: string, days: number) {
   return data
 }
 
+export type ExportState = 'none' | 'working' | 'ready' | 'failed'
+
+export async function getExport(videoId: string) {
+  const { data } = await api.get<{ state: ExportState; available: boolean }>(`/api/videos/${videoId}/export`)
+  return data
+}
+
+export async function startExport(videoId: string) {
+  const { data } = await api.post<{ state: ExportState }>(`/api/videos/${videoId}/export`)
+  return data
+}
+
 export interface ShareView {
   title: string
   base: string

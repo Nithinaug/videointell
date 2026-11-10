@@ -43,6 +43,11 @@ data "aws_iam_policy_document" "worker_instance_s3" {
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]
     resources = ["${aws_s3_bucket.videos.arn}/*"]
   }
+
+  statement {
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.worker.arn]
+  }
 }
 
 resource "aws_iam_role_policy" "worker_instance_s3" {

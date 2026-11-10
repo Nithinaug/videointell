@@ -37,6 +37,16 @@ about a minute later you get:
   points with timestamps. The pencil next to the title renames a video
   (`PATCH /api/videos/:id`).
 - **Transcript download** as `.vtt` subtitles or `.txt` with timestamps.
+- **HD export**: the Export HD button makes a 1080p (or 720p when the source
+  is smaller) MP4 from the original upload in a Lambda worker, then offers it
+  as a download. A source under 720p is scaled up, which adds size, not detail.
+  The original upload must still exist (test expiry: 3 days), the video must
+  fit one Lambda run of 15 minutes, and each user gets 5 exports a day
+  (`EXPORTS_PER_DAY`).
+- **Share menu**: the Share button opens a menu with the browser's share
+  sheet where it has one, WhatsApp, Gmail, X, LinkedIn, Telegram, Copy link
+  and YouTube (saves the HD file and opens YouTube's upload page). Every
+  entry shares the same 7-day link.
 - **Keyboard shortcuts** on a video page: Space or K play and pause, left
   and right arrows skip 5 s, F toggles fullscreen (and exits it), M mutes,
   `/` jumps to the search box. They do nothing while you type in a field.
@@ -50,10 +60,10 @@ ClimaRoute. The rules that shape every choice below:
   EC2; the heavy processing runs as a Lambda fan-out, because 1,000 parallel
   workers finish a long video in about the time of a short one.
 - **AWS SDK only in the Lambda worker:** all other AWS wiring lives in
-  Terraform. The API makes two kinds of AWS call itself, both signed with
+  Terraform. The API makes three kinds of AWS call itself, all signed with
   hand-written SigV4 from Go's standard library: its Aurora IAM sign-in token
-  and the Bedrock Converse call behind the AI answer
-  (`backend/internal/awsapi`). The Cognito key download is plain HTTPS.
+  the Bedrock Converse call behind the AI answer, and the
+  asynchronous Lambda invoke for HD export (`backend/internal/awsapi`). The Cognito key download is plain HTTPS.
 - **AWS Free plan credits only:** the plan blocks MediaConvert, Transcribe
   (`SubscriptionRequiredException`) and Anthropic models on Bedrock, so
   transcoding and transcription run in our own Lambda workers with ffmpeg
@@ -631,6 +641,9 @@ Every variable has a local-dev default.
 | `MAX_UPLOADS_PER_DAY_TOTAL` | `30` | New videos across the whole site in any 24 hours; caps the Lambda spend |
 | `ASK_PER_HOUR` | `30` | AI answers per user per hour (counted in the API's memory) |
 | `MAX_USERS` | `100` | Accounts allowed; a new sign-in past this gets "sign-ups are full" |
+| `WORKER_FUNCTION` | empty | Name of the worker Lambda; HD export is off while it is empty (`run-hybrid.sh` sets it) |
+| `VIDEO_BUCKET` | empty | Bucket the worker reads the original from (`run-hybrid.sh` sets it) |
+| `EXPORTS_PER_DAY` | `5` | HD exports per user in any 24 hours (counted in the API's memory) |
 
 ### Worker
 

@@ -164,3 +164,19 @@ func (s *Store) RenameVideo(id, title string) (models.Video, error) {
 	err := s.db.Get(&v, `UPDATE videos SET title=$2, updated_at=now() WHERE id=$1 RETURNING `+videoColumns, id, title)
 	return v, err
 }
+
+func (s *Store) ReserveExport(userID string, perDay int) (string, error) {
+	var id string
+	err := s.db.Get(&id, `INSERT INTO exports (user_id)
+		SELECT $1 WHERE (SELECT count(*) FROM exports WHERE user_id = $1 AND created_at > now() - interval '1 day') < $2
+		RETURNING id`, userID, perDay)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
+func (s *Store) ReleaseExport(id string) error {
+	_, err := s.db.Exec(`DELETE FROM exports WHERE id = $1`, id)
+	return err
+}

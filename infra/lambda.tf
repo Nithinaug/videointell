@@ -75,6 +75,12 @@ resource "aws_iam_role_policy" "worker_lambda" {
   policy = data.aws_iam_policy_document.worker_lambda.json
 }
 
+resource "aws_lambda_function_event_invoke_config" "worker" {
+  function_name                = aws_lambda_function.worker.function_name
+  maximum_retry_attempts       = 0
+  maximum_event_age_in_seconds = 900
+}
+
 resource "aws_lambda_function" "worker" {
   function_name = "${local.name}-worker"
   role          = aws_iam_role.worker_lambda.arn
