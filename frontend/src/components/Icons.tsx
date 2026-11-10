@@ -47,3 +47,19 @@ export function CheckIcon({ className = 'h-4 w-4' }: { className?: string }) {
     </svg>
   )
 }
+
+export function PencilIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" />
+    </svg>
+  )
+}
+
+export function DownloadIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M12 4v12M6 11l6 6 6-6M4 20h16" />
+    </svg>
+  )
+}

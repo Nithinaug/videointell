@@ -1,9 +1,14 @@
 package handlers
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestUserCache(t *testing.T) {
@@ -45,5 +50,19 @@ func TestRateLimiter(t *testing.T) {
 	}
 	if !r.allow("u", now.Add(time.Hour+time.Second)) {
 		t.Fatal("window should reset")
+	}
+}
+
+func TestCORSAllowsPatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(CORSMiddleware())
+	r.PATCH("/x", func(c *gin.Context) { c.Status(http.StatusOK) })
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodOptions, "/x", nil)
+	req.Header.Set("Access-Control-Request-Method", "PATCH")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent || !strings.Contains(w.Header().Get("Access-Control-Allow-Methods"), "PATCH") {
+		t.Fatalf("preflight = %d, methods %q", w.Code, w.Header().Get("Access-Control-Allow-Methods"))
 	}
 }

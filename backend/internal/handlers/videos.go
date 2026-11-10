@@ -404,3 +404,29 @@ func (h *FilesHandler) serveSigned(c *gin.Context, scope string, allow func(rel 
 	}
 	c.File(file)
 }
+
+func (h *VideoHandler) Rename(c *gin.Context) {
+	v, err := h.Store.GetVideo(c.Param("id"))
+	if err != nil || v.UserID != c.GetString("user_id") {
+		c.JSON(http.StatusNotFound, gin.H{"error": "video not found"})
+		return
+	}
+	var body struct {
+		Title string `json:"title"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "send {title}"})
+		return
+	}
+	title := strings.TrimSpace(body.Title)
+	if title == "" || utf8.RuneCountInString(title) > maxTitleRunes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("give the video a title of 1 to %d characters", maxTitleRunes)})
+		return
+	}
+	updated, err := h.Store.RenameVideo(v.ID, title)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not rename the video"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": updated.ID, "title": updated.Title})
+}

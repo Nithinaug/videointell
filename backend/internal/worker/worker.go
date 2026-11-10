@@ -442,8 +442,9 @@ func vtt(segments []Segment) string {
 }
 
 const bedrockPrompt = `Below is the timestamped transcript of a video. Reply with only a JSON object, no other text:
-{"summary": "3-5 sentences", "chapters": [{"start": "HH:MM:SS", "title": "short title"}], "tags": ["5-10 lowercase tags"]}
-If the transcript is empty, reply {"summary": "", "chapters": [], "tags": []}.
+{"title": "3-8 word title", "summary": "3-5 sentences", "takeaways": [{"at": "HH:MM:SS", "text": "one sentence"}], "chapters": [{"start": "HH:MM:SS", "title": "short title"}], "tags": ["5-10 lowercase tags"]}
+Use 3-5 takeaways, each a key point with the time it is discussed.
+If the transcript is empty, reply {"title": "", "summary": "", "takeaways": [], "chapters": [], "tags": []}.
 
 <transcript>
 %s

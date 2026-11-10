@@ -38,6 +38,7 @@ func New(d Deps) *gin.Engine {
 			videos.GET("/:id", d.VideoHandler.Detail)
 			videos.GET("/:id/progress", d.VideoHandler.Progress)
 			videos.DELETE("/:id", d.VideoHandler.Delete)
+			videos.PATCH("/:id", d.VideoHandler.Rename)
 			videos.GET("/:id/clips", d.Clips.List)
 			videos.POST("/:id/clips", d.Clips.Create)
 			videos.DELETE("/:id/clips/:clip", d.Clips.Delete)

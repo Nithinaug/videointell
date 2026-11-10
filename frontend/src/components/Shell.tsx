@@ -32,6 +32,18 @@ export default function Shell({ children }: { children: ReactNode }) {
   const [params, setParams] = useSearchParams()
   const [q, setQ] = useState(params.get('q') ?? '')
   const typed = useRef(false)
+  const searchBox = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = e.target as HTMLElement | null
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable))) return
+      e.preventDefault()
+      searchBox.current?.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   function go(text: string, push: boolean, asking = false) {
@@ -67,6 +79,14 @@ export default function Shell({ children }: { children: ReactNode }) {
   }
 
   const where = onVideo ? 'this video' : 'all your videos'
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 640px)').matches)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)')
+    const update = () => setNarrow(mq.matches)
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean)
   const showDrop = open && !onSearchPage && suggestions !== null && q.trim().length >= 2
 
@@ -111,6 +131,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               <path d="m20 20-3.5-3.5" />
             </svg>
             <input
+              ref={searchBox}
               type="search"
               value={q}
               autoFocus={onSearchPage}
@@ -124,7 +145,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               }}
               onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
               onBlur={() => setTimeout(() => setOpen(false), 150)}
-              placeholder={onVideo ? 'Search in this video' : 'Search in all videos'}
+              placeholder={narrow ? 'Search' : onVideo ? 'Search in this video' : 'Search in all videos'}
               aria-label={`Search what is said or shown in ${where}`}
               aria-expanded={showDrop}
               aria-controls="search-suggestions"

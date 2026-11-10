@@ -32,6 +32,14 @@ about a minute later you get:
 - **Share links**: the Share button copies a 7-day, read-only link to the
   video for someone without an account; a clip's Share button copies a link
   that opens straight into that clip.
+- **Titles and key points**: the summary step also writes a short suggested
+  title (shown in the Summary tab with a "Use it" button) and 3 to 5 key
+  points with timestamps. The pencil next to the title renames a video
+  (`PATCH /api/videos/:id`).
+- **Transcript download** as `.vtt` subtitles or `.txt` with timestamps.
+- **Keyboard shortcuts** on a video page: Space or K play and pause, left
+  and right arrows skip 5 s, F toggles fullscreen (and exits it), M mutes,
+  `/` jumps to the search box. They do nothing while you type in a field.
 
 ## Rules this project follows
 

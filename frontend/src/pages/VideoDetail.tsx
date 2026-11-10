@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Hls from 'hls.js'
-import { canDelete, createShare, deleteVideo, getProgress, getResults, getVideoDetail, progressPercent, type Clip, type Segment, type Results, type VideoDetail as VideoDetailT } from '../api/client'
+import { canDelete, createShare, deleteVideo, getProgress, renameVideo, getResults, getVideoDetail, progressPercent, type Clip, type Segment, type Results, type VideoDetail as VideoDetailT } from '../api/client'
 import AskCard from '../components/AskCard'
 import ClipControls from '../components/ClipControls'
 import ClipsPanel from '../components/ClipsPanel'
-import { ShareIcon, TrashIcon } from '../components/Icons'
+import { DownloadIcon, PencilIcon, ShareIcon, TrashIcon } from '../components/Icons'
 import Shell from '../components/Shell'
 import { loadClip } from '../lib/clip'
+import { downloadTxt, downloadVtt } from '../lib/download'
 import { firstAppearances, snippet } from '../lib/snippet'
 import { clock, thumbFor, toSeconds } from '../lib/time'
 
@@ -161,7 +162,7 @@ export function Transcript({ segments, screen, time, onSeek, filter }: { segment
   )
 }
 
-function Watch({ detail, results, startAt, filter, asked }: { detail: VideoDetailT; results: Results | null; startAt: number; filter: string; asked: string }) {
+function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: VideoDetailT; results: Results | null; startAt: number; filter: string; asked: string; onRename: (title: string) => void }) {
   const ref = useRef<HTMLVideoElement>(null)
   const started = useRef(false)
   const [time, setTime] = useState(0)
@@ -317,6 +318,40 @@ function Watch({ detail, results, startAt, filter, asked }: { detail: VideoDetai
   }, [base, detail.video.id])
 
   const [tab, setTab] = useState<'transcript' | 'clips' | 'summary'>('transcript')
+
+  const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {})
+  keyHandler.current = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      if (e.ctrlKey || e.metaKey || e.altKey || (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable))) return
+      const video = ref.current
+      if (!video) return
+      const k = e.key.toLowerCase()
+      if (k === 'f') {
+        e.preventDefault()
+        if (e.repeat) return
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+        else (clipView ? box.current : video)?.requestFullscreen().catch(() => {})
+      } else if (k === ' ' || k === 'k') {
+        if (el?.tagName === 'BUTTON' && k === ' ') return
+        e.preventDefault()
+        if (clipView) clipToggle()
+        else if (video.paused) video.play().catch(() => {})
+        else video.pause()
+      } else if (k === 'arrowleft' || k === 'arrowright') {
+        if (el?.closest('[role=tab],[role=slider]')) return
+        e.preventDefault()
+        const step = k === 'arrowleft' ? -5 : 5
+        if (clipView) clipSeek(Math.min(Math.max(0, rel + step), clipView.length))
+        else video.currentTime = Math.min(Math.max(0, video.currentTime + step), video.duration || Infinity)
+      } else if (k === 'm') {
+        video.muted = !video.muted
+      }
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => keyHandler.current(e)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const searching = filter.trim().length >= 2
 
   useEffect(() => {
@@ -371,6 +406,7 @@ function Watch({ detail, results, startAt, filter, asked }: { detail: VideoDetai
           <track kind="captions" srcLang="en" label="English" src={base + 'transcript.vtt'} />
         </video>
         )}
+        {!clip && base && <p className="mt-2 hidden text-center text-[11px] text-zinc-600 lg:block">Space play · ← → 5 s · F fullscreen · M mute · / search</p>}
         {clip && clipView && <ClipControls playing={playing} position={rel} length={clipView.length} onToggle={clipToggle} onSeek={clipSeek} fullscreenTarget={box} />}
       </motion.div>
         {!results ? (
@@ -403,6 +439,15 @@ function Watch({ detail, results, startAt, filter, asked }: { detail: VideoDetai
             </div>
           ) : tab === 'transcript' ? (
             <>
+              <div className="mb-2 flex items-center justify-end gap-1 text-xs text-zinc-500">
+                <DownloadIcon className="h-3.5 w-3.5" />
+                <button onClick={() => downloadVtt(base!, detail.video.title).catch(() => alert('Could not download the subtitles. Try again.'))} className="rounded px-1.5 py-0.5 hover:bg-white/5 hover:text-white">
+                  VTT
+                </button>
+                <button onClick={() => downloadTxt(results.transcript, detail.video.title)} className="rounded px-1.5 py-0.5 hover:bg-white/5 hover:text-white">
+                  TXT
+                </button>
+              </div>
               {asked.length >= 2 ? (
                 <AskCard q={asked} videoId={detail.video.id} onSeek={seek} />
               ) : (
@@ -413,7 +458,35 @@ function Watch({ detail, results, startAt, filter, asked }: { detail: VideoDetai
           ) : tab === 'clips' ? (
             <ClipsPanel videoId={detail.video.id} time={time} duration={duration} activeId={clip?.id} onPlay={playClip} />
           ) : (
-            <p className="text-sm leading-relaxed text-zinc-300">{results.summary.summary || 'No speech found in this video.'}</p>
+            <div className="space-y-4">
+              {results.summary.title && results.summary.title !== detail.video.title && (
+                <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-2 text-sm ring-1 ring-white/10">
+                  <span className="min-w-0 flex-1 truncate text-zinc-300">
+                    <span className="mr-2 text-xs text-zinc-500">Suggested title</span>
+                    {results.summary.title}
+                  </span>
+                  <button onClick={() => onRename(results.summary.title!)} className="shrink-0 rounded-lg px-2 py-1 text-xs text-amber-300 ring-1 ring-white/10 hover:bg-white/5">
+                    Use it
+                  </button>
+                </div>
+              )}
+              <p className="text-sm leading-relaxed text-zinc-300">{results.summary.summary || 'No speech found in this video.'}</p>
+              {results.summary.takeaways && results.summary.takeaways.length > 0 && (
+                <div>
+                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Key points</h3>
+                  <ul className="space-y-1">
+                    {results.summary.takeaways.filter((k) => typeof k.at === 'string' && Number.isFinite(toSeconds(k.at))).map((k) => (
+                      <li key={k.at + k.text}>
+                        <button onClick={() => seek(toSeconds(k.at))} className="flex w-full gap-3 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-300 hover:bg-white/5">
+                          <span className="w-10 shrink-0 pt-0.5 tabular-nums text-xs text-amber-300">{clock(toSeconds(k.at))}</span>
+                          <span>{k.text}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </aside>
@@ -428,6 +501,7 @@ export default function VideoDetail() {
   const startAt = Number(params.get('t')) || 0
   const [deleting, setDeleting] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [detail, setDetail] = useState<VideoDetailT | null>(null)
   const [results, setResults] = useState<Results | null>(null)
@@ -461,6 +535,18 @@ export default function VideoDetail() {
 
   const { video } = detail
 
+  async function onRename(title: string) {
+    const t = title.trim()
+    setEditing(false)
+    if (!t || t === video.title) return
+    try {
+      const updated = await renameVideo(video.id, t)
+      setDetail((prev) => (prev ? { ...prev, video: { ...prev.video, title: updated.title } } : prev))
+    } catch {
+      alert('Could not rename the video. Try again.')
+    }
+  }
+
   async function onDelete() {
     if (!confirm(`Delete "${video.title}"? This removes the video, its clips and its results for good.`)) return
     setDeleting(true)
@@ -487,7 +573,32 @@ export default function VideoDetail() {
       <div className="space-y-5">
         <header className="space-y-2">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-white">{video.title}</h1>
+            {editing ? (
+              <input
+                autoFocus
+                defaultValue={video.title}
+                maxLength={200}
+                aria-label="Video title"
+                onBlur={(e) => onRename(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                  if (e.key === 'Escape') {
+                    e.currentTarget.value = video.title
+                    setEditing(false)
+                  }
+                }}
+                className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 font-display text-2xl font-semibold text-white outline-none focus:border-amber-400/60 md:text-3xl"
+              />
+            ) : (
+              <>
+                <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-white">{video.title}</h1>
+                {video.status === 'ready' && (
+                  <button onClick={() => setEditing(true)} aria-label="Rename video" title="Rename video" className="grid h-8 w-8 place-items-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white">
+                    <PencilIcon className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </>
+            )}
             {video.status === 'ready' && (
               <div className="relative ml-auto">
                 <button
@@ -534,7 +645,7 @@ export default function VideoDetail() {
         ) : video.status === 'failed' ? (
           <div className="glass rounded-3xl border-red-400/30 p-6 text-sm text-red-300">Processing failed.</div>
         ) : (
-          <Watch detail={detail} results={results} startAt={startAt} filter={params.get('q') ?? ''} asked={params.get('ask') === '1' ? (params.get('q') ?? '').trim() : ''} />
+          <Watch detail={detail} results={results} startAt={startAt} filter={params.get('q') ?? ''} asked={params.get('ask') === '1' ? (params.get('q') ?? '').trim() : ''} onRename={onRename} />
         )}
       </div>
     </Shell>

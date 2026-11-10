@@ -61,9 +61,16 @@ export interface VideoDetail {
 }
 
 export interface Summary {
+  title?: string
   summary: string
+  takeaways?: { at: string; text: string }[]
   chapters: { start: string; title: string }[]
   tags: string[]
+}
+
+export async function renameVideo(videoId: string, title: string) {
+  const { data } = await api.patch<{ id: string; title: string }>(`/api/videos/${videoId}`, { title })
+  return data
 }
 
 export interface Segment {

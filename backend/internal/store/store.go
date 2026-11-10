@@ -158,3 +158,9 @@ func (s *Store) DeleteClip(videoID, clipID string) (bool, error) {
 	n, err := res.RowsAffected()
 	return n > 0, err
 }
+
+func (s *Store) RenameVideo(id, title string) (models.Video, error) {
+	var v models.Video
+	err := s.db.Get(&v, `UPDATE videos SET title=$2, updated_at=now() WHERE id=$1 RETURNING `+videoColumns, id, title)
+	return v, err
+}
