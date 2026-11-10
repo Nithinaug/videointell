@@ -368,8 +368,7 @@ per GB.
 
 - Go public: CloudFront and WAF, rate limits on Ask and uploads, and a
   monthly cost check against the remaining credits.
-- Highlight reels: every moment about a topic, joined into one playable reel
-  (reuses the clip playlist builder).
+- Sharing a highlight reel (a share link that spans several videos)
 - Postgres full-text search over transcripts and screen text, when
   libraries outgrow file scanning.
 - A stronger speech model for Indian accents and mixed Hindi and English.
@@ -514,7 +513,7 @@ To do, in build order:
 - [x] Cognito sign-in page styled from Terraform; minimum password length 8
 - [ ] WAF on CloudFront (after CloudFront)
 - [ ] Public launch: rate limits, cost check, security pass
-- [ ] Highlight reels
+- [x] Highlight reels: "Watch all N moments" on the Search page (shown when matches come from 2+ videos) joins every matching moment (2 s before to 12 s after) across videos into one HLS playlist in the browser
 
 ## How this is being built
 

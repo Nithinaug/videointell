@@ -124,7 +124,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               }}
               onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
               onBlur={() => setTimeout(() => setOpen(false), 150)}
-              placeholder={onVideo ? 'Search this video' : 'Search all videos'}
+              placeholder={onVideo ? 'Search in this video' : 'Search in all videos'}
               aria-label={`Search what is said or shown in ${where}`}
               aria-expanded={showDrop}
               aria-controls="search-suggestions"

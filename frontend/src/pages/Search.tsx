@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { search, type SearchResult } from '../api/client'
 import AskCard from '../components/AskCard'
+import ReelPlayer from '../components/ReelPlayer'
 import Shell from '../components/Shell'
 import { snippet } from '../lib/snippet'
 import { clock, thumbFor } from '../lib/time'
@@ -32,6 +33,11 @@ export default function Search() {
   const hits = data?.results ?? null
   const short = q.trim().replace(/\s+/g, '').length < 2
   const asking = params.get('ask') === '1'
+  const [reel, setReel] = useState(false)
+  const videoCount = new Set(hits?.map((h) => h.video_id)).size
+  const manyVideos = videoCount >= 2
+
+  useEffect(() => setReel(false), [q])
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
@@ -59,13 +65,21 @@ export default function Search() {
         {q ? <>&ldquo;{q}&rdquo;</> : 'Search'}
       </h1>
       <p className="mt-1 text-sm text-zinc-400">
-        Moments where this was said or shown on screen, across all your videos{hits && hits.length > 0 ? ` (${hits.length})` : ''}. Click one to play from there.
-        {data && ` ${data.searched} ${data.searched === 1 ? 'video' : 'videos'} searched.`}
+        {hits && hits.length > 0 && `${hits.length} ${hits.length === 1 ? 'moment' : 'moments'} in ${videoCount} ${videoCount === 1 ? 'video' : 'videos'}`}
       </p>
       <p className="mb-6 mt-1 text-sm text-zinc-500">
         {data && data.skipped.length > 0 && `Still processing, not searched yet: ${data.skipped.join(', ')}. `}
         {!short && !asking && 'Press Enter to get an AI answer from all your videos.'}
       </p>
+      {hits && manyVideos && !reel && (
+        <button onClick={() => setReel(true)} className="btn-glow mb-4 inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden>
+            <path d="M8 5.5v13l10-6.5z" />
+          </svg>
+          Watch all {hits.length} moments
+        </button>
+      )}
+      {reel && manyVideos && hits && <ReelPlayer hits={hits} onClose={() => setReel(false)} />}
       {!short && asking && <AskCard q={q.trim()} />}
       {short ? (
         <div className="glass rounded-3xl px-6 py-16 text-center text-slate-400">Keep typing...</div>
