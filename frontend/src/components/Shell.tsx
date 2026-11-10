@@ -77,10 +77,10 @@ export default function Shell({ children }: { children: ReactNode }) {
     }
     let stopped = false
     const id = setTimeout(() => {
-      search(q.trim())
+      search(q.trim(), videoId)
         .then((r) => {
           if (stopped) return
-          setSuggestions(r.results.filter((h) => !videoId || h.video_id === videoId).slice(0, 6))
+          setSuggestions(r.results.slice(0, 6))
           setOpen(true)
         })
         .catch(() => !stopped && setSuggestions(null))

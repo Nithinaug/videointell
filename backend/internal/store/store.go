@@ -43,7 +43,8 @@ func (s *Store) UpsertCognitoUser(sub, email string, maxUsers int) (string, erro
 
 func (s *Store) CountVideosSince(userID string, since time.Time) (int, error) {
 	var n int
-	err := s.db.Get(&n, `SELECT count(*) FROM videos WHERE ($1 = '' OR user_id::text = $1) AND created_at > $2`, userID, since)
+	err := s.db.Get(&n, `SELECT count(*) FROM videos WHERE ($1 = '' OR user_id::text = $1) AND created_at > $2
+		AND (status <> 'uploading' OR created_at > now() - interval '15 minutes')`, userID, since)
 	return n, err
 }
 

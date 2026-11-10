@@ -166,6 +166,15 @@ func (h *VideoHandler) Search(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if only := c.Query("video_id"); only != "" {
+		kept := videos[:0]
+		for _, v := range videos {
+			if v.ID == only {
+				kept = append(kept, v)
+			}
+		}
+		videos = kept
+	}
 	hits := []searchHit{}
 	searched, skipped := 0, []string{}
 	for _, v := range videos {

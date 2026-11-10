@@ -171,8 +171,8 @@ export async function ask(q: string, videoId?: string): Promise<AskResult> {
   return data
 }
 
-export async function search(q: string): Promise<SearchResult> {
-  const { data } = await api.get<SearchResult>('/api/search', { params: { q } })
+export async function search(q: string, videoId?: string): Promise<SearchResult> {
+  const { data } = await api.get<SearchResult>('/api/search', { params: videoId ? { q, video_id: videoId } : { q } })
   return { ...data, results: data.results.map((h) => (h.results_url ? { ...h, results_url: API_BASE_URL + h.results_url } : h)) }
 }
 

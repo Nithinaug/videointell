@@ -208,7 +208,9 @@ function Watch({ detail, results, startAt, filter, asked }: { detail: VideoDetai
       let hls: Hls | null = null
       let url = ''
       let stopped = false
-      loadClip(base, clip.start_ms / 1000, clip.end_ms / 1000).then((c) => {
+      getVideoDetail(detail.video.id)
+        .then((d) => loadClip(d.results_url ?? base, clip.start_ms / 1000, clip.end_ms / 1000))
+        .then((c) => {
         if (stopped || !c) return
         url = c.url
         clipBase.current = clip.start_ms / 1000 - c.offset
@@ -235,14 +237,16 @@ function Watch({ detail, results, startAt, filter, asked }: { detail: VideoDetai
       resumeAt.current = null
     }
     if (native) {
-      video.src = src
-      video.addEventListener('loadedmetadata', resume, { once: true })
-      if (clip) {
+      const onMeta = () => {
+        resume()
+        if (!clip) return
         video.currentTime = clip.start_ms / 1000
         stopAt.current = clip.end_ms / 1000
         video.play().catch(() => {})
       }
-      return
+      video.src = src
+      video.addEventListener('loadedmetadata', onMeta, { once: true })
+      return () => video.removeEventListener('loadedmetadata', onMeta)
     }
     const hls = new Hls()
     hls.loadSource(src)

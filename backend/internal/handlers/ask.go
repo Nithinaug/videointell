@@ -234,6 +234,7 @@ func (h *AskHandler) Ask(c *gin.Context) {
 	}
 	whole := body.VideoID != "" && itemChars(videos[0].items) <= maxVideoAskChars
 	lines, truncated := pickContext(videos, q, whole)
+	truncated = truncated || body.VideoID != "" && !whole
 	empty["truncated"] = truncated
 	if len(lines) == 0 {
 		c.JSON(http.StatusOK, empty)
