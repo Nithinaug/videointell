@@ -53,7 +53,7 @@ export default function AskCard({ q, videoId, onSeek }: { q: string; videoId?: s
                 <>
                   <span className="w-12 shrink-0 font-mono text-xs text-amber-300">{clock(s.from_ms / 1000)}</span>
                   <span className="min-w-0">
-                    {s.kind === 'screen' && <span className="mr-2 rounded bg-sky-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">On screen</span>}
+                    {s.kind === 'screen' && <span className="mr-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-200">On screen</span>}
                     {!videoId && <span className="mr-2 text-xs text-zinc-500">{s.title}</span>}
                     <span className="text-zinc-300">{snippet(s.text, q.toLowerCase().split(/\s+/).filter(Boolean))}</span>
                   </span>

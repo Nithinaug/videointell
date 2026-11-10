@@ -108,7 +108,7 @@ export default function ShareMenu({ videoId, title, hd, resultsUrl }: { videoId:
         aria-haspopup="menu"
         aria-expanded={open}
         title="Share"
-        className="grid h-9 w-9 place-items-center rounded-xl text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white"
+        className="grid h-9 w-9 pointer-coarse:size-11 place-items-center rounded-full text-zinc-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white"
       >
         <ShareIcon />
       </button>

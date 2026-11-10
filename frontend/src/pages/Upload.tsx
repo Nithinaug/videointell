@@ -24,8 +24,8 @@ function Ring({ value }: { value: number }) {
       />
       <defs>
         <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#f5a524" />
-          <stop offset="100%" stopColor="#d97706" />
+          <stop offset="0%" style={{ stopColor: 'var(--color-accent)' }} />
+          <stop offset="100%" style={{ stopColor: 'var(--color-accent-deep)' }} />
         </linearGradient>
       </defs>
     </svg>
@@ -86,7 +86,7 @@ export default function Upload() {
   return (
     <Shell>
       <div className="mx-auto max-w-2xl">
-        <h1 className="font-display text-3xl font-bold tracking-tight text-white">Upload</h1>
+        <h1 className="font-display title-xl text-white">Upload</h1>
 
         <form onSubmit={onSubmit} className="glass mt-6 space-y-5 rounded-3xl p-6">
           <button
@@ -107,8 +107,8 @@ export default function Upload() {
             <AnimatePresence mode="wait">
               {done ? (
                 <motion.div key="done" initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 400, damping: 15 }} className="flex flex-col items-center gap-2">
-                  <span className="grid h-16 w-16 place-items-center rounded-full bg-emerald-400/15 text-3xl text-emerald-300 ring-1 ring-emerald-400/30">&#10003;</span>
-                  <span className="font-medium text-emerald-200">Uploaded</span>
+                  <span className="grid h-16 w-16 place-items-center rounded-full bg-amber-400/15 text-3xl text-amber-300 ring-1 ring-amber-400/30">&#10003;</span>
+                  <span className="font-medium text-amber-200">Uploaded</span>
                 </motion.div>
               ) : busy ? (
                 <motion.div key="busy" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3">
@@ -122,13 +122,13 @@ export default function Upload() {
                       <Ring value={0.25} />
                     </motion.div>
                   )}
-                  <span className="text-sm text-slate-300">{(progress ?? 0) < 1 ? `Uploading ${file?.name}` : 'Saving...'}</span>
+                  <span className="text-sm text-zinc-300">{(progress ?? 0) < 1 ? `Uploading ${file?.name}` : 'Saving...'}</span>
                 </motion.div>
               ) : file ? (
                 <motion.div key="file" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center gap-1">
                   <span className="text-4xl" aria-hidden>&#127902;</span>
                   <span className="font-medium text-white break-all">{file.name}</span>
-                  <span className="text-xs text-slate-400">{size(file.size)}</span>
+                  <span className="text-xs text-zinc-400">{size(file.size)}</span>
                 </motion.div>
               ) : (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-2">
@@ -136,14 +136,14 @@ export default function Upload() {
                     &#8593;
                   </motion.span>
                   <span className="font-medium text-white">{dragging ? 'Drop it' : 'Drag a video here'}</span>
-                  <span className="text-xs text-slate-400">or click to choose</span>
+                  <span className="text-xs text-zinc-400">or click to choose</span>
                 </motion.div>
               )}
             </AnimatePresence>
           </button>
 
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">Title</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.15em] text-zinc-400">Title</span>
             <input
               type="text"
               value={title}
@@ -151,7 +151,7 @@ export default function Upload() {
               placeholder="Team meeting"
               maxLength={200}
               disabled={busy}
-              className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition-colors placeholder:text-slate-500 focus:border-amber-400/60"
+              className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-amber-400/60"
             />
           </label>
 

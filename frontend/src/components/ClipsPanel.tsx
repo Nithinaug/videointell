@@ -74,7 +74,7 @@ export default function ClipsPanel({ videoId, time, duration, activeId, onPlay }
           maxLength={100}
           placeholder="Clip title (optional)"
           aria-label="Clip title"
-          className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white outline-none placeholder:text-slate-500 focus:border-amber-400/60"
+          className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-amber-400/60"
         />
         <div className="flex items-center gap-1.5">
           <button type="button" onClick={() => setStart(time)} className={btn}>
@@ -131,7 +131,7 @@ export default function ClipsPanel({ videoId, time, duration, activeId, onPlay }
                   onClick={() => onShare(c)}
                   aria-label={copied === c.id ? 'Link copied' : `Share clip ${c.title}`}
                   title={copied === c.id ? 'Link copied to clipboard' : 'Share clip'}
-                  className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg transition-colors hover:bg-white/5 ${copied === c.id ? 'text-emerald-300' : 'text-zinc-500 hover:text-white'}`}
+                  className={`grid h-7 w-7 shrink-0 pointer-coarse:size-11 place-items-center rounded-full transition-colors hover:bg-white/5 ${copied === c.id ? 'text-amber-300' : 'text-zinc-500 hover:text-white'}`}
                 >
                   {copied === c.id ? <CheckIcon className="h-3.5 w-3.5" /> : <ShareIcon className="h-3.5 w-3.5" />}
                 </button>

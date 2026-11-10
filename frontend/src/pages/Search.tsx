@@ -61,7 +61,7 @@ export default function Search() {
 
   return (
     <Shell>
-      <h1 className="font-display text-3xl font-bold tracking-tight text-white">
+      <h1 className="font-display title-xl text-white">
         {q ? <>&ldquo;{q}&rdquo;</> : 'Search'}
       </h1>
       <p className="mt-1 text-sm text-zinc-400">
@@ -82,7 +82,7 @@ export default function Search() {
       {reel && manyVideos && hits && <ReelPlayer hits={hits} onClose={() => setReel(false)} />}
       {!short && asking && <AskCard q={q.trim()} />}
       {short ? (
-        <div className="glass rounded-3xl px-6 py-16 text-center text-slate-400">Keep typing...</div>
+        <div className="glass rounded-3xl px-6 py-16 text-center text-zinc-400">Keep typing...</div>
       ) : failed ? (
         <div className="glass rounded-3xl px-6 py-16 text-center text-red-300">Search failed. Check that the API is running, then try again.</div>
       ) : hits === null ? (
@@ -92,7 +92,7 @@ export default function Search() {
           ))}
         </div>
       ) : hits.length === 0 ? (
-        <div className="glass rounded-3xl px-6 py-16 text-center text-slate-400">Nobody says or shows that in any of your videos. Try fewer or different words.</div>
+        <div className="glass rounded-3xl px-6 py-16 text-center text-zinc-400">Nobody says or shows that in any of your videos. Try fewer or different words.</div>
       ) : (
         <motion.ul className="space-y-3" initial="hidden" animate="show" variants={{ show: { transition: { staggerChildren: 0.04 } } }}>
           {hits.map((h) => (
@@ -111,14 +111,14 @@ export default function Search() {
                       className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                   )}
-                  <span className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-slate-200">{clock(h.from_ms / 1000)}</span>
+                  <span className="absolute bottom-1.5 right-1.5 rounded bg-scrim/70 px-1.5 py-0.5 font-mono text-[10px] text-on-scrim">{clock(h.from_ms / 1000)}</span>
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-xs text-slate-400">
-                    {h.kind === 'screen' && <span className="mr-2 rounded bg-sky-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">On screen</span>}
+                  <p className="truncate text-xs text-zinc-400">
+                    {h.kind === 'screen' && <span className="mr-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-200">On screen</span>}
                     {h.title}
                   </p>
-                  <p className="mt-1 line-clamp-2 text-slate-200">
+                  <p className="mt-1 line-clamp-2 text-zinc-200">
                     <Highlight text={snippet(h.text, terms)} terms={terms} />
                   </p>
                 </div>

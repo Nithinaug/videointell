@@ -6,19 +6,6 @@ import { HomeIcon, SignOutIcon, UploadIcon } from './Icons'
 import { snippet } from '../lib/snippet'
 import { clock } from '../lib/time'
 
-export function Aurora() {
-  return (
-    <>
-      <div className="aurora" aria-hidden>
-        <span />
-        <span />
-        <span />
-      </div>
-      <div className="grain" aria-hidden />
-    </>
-  )
-}
-
 export default function Shell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -118,15 +105,14 @@ export default function Shell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-clip bg-[#0c0c0e] text-zinc-200">
-      <Aurora />
-      <header className="relative z-20 px-4 pt-4">
-        <nav className="glass mx-auto grid max-w-6xl grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl px-4 py-2.5 md:grid-cols-[1fr_minmax(0,28rem)_1fr]">
-          <Link to="/" aria-label="Home" title="Home" className="grid h-9 w-9 place-items-center justify-self-start rounded-xl text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white">
+    <div className="relative min-h-screen overflow-x-clip bg-page text-zinc-200">
+      <header className="relative z-20 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))]">
+        <nav className="glass-bar mx-auto grid max-w-6xl grid-cols-[auto_1fr_auto] items-center gap-3 rounded-2xl px-4 py-2.5 md:grid-cols-[1fr_minmax(0,28rem)_1fr]">
+          <Link to="/" aria-label="Home" title="Home" className="grid h-9 w-9 pointer-coarse:size-11 place-items-center justify-self-start rounded-full text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white">
             <HomeIcon />
           </Link>
           <form onSubmit={onSearch} role="search" className="relative min-w-0">
-            <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+            <svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-3.5-3.5" />
             </svg>
@@ -149,7 +135,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               aria-label={`Search what is said or shown in ${where}`}
               aria-expanded={showDrop}
               aria-controls="search-suggestions"
-              className={`w-full rounded-xl border border-white/10 bg-black/30 py-2 pl-9 text-sm text-white outline-none transition-colors placeholder:text-slate-500 focus:border-amber-400/60 pr-3.5`}
+              className={`w-full rounded-full border border-white/10 bg-black/30 py-2 pointer-coarse:py-3 pl-9 text-sm text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-amber-400/60 pr-3.5`}
             />
             {showDrop && (
               <div id="search-suggestions" className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-[#141416]/95 shadow-2xl backdrop-blur">
@@ -167,7 +153,7 @@ export default function Shell({ children }: { children: ReactNode }) {
                         >
                           <span className="w-10 shrink-0 pt-0.5 font-mono text-xs text-amber-300">{clock(s.from_ms / 1000)}</span>
                           <span className="min-w-0">
-                            {s.kind === 'screen' && <span className="mr-2 rounded bg-sky-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">On screen</span>}
+                            {s.kind === 'screen' && <span className="mr-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-200">On screen</span>}
                             {!onVideo && <span className="mr-2 text-xs text-zinc-500">{s.title}</span>}
                             <span className="text-zinc-200">{snippet(s.text, terms, 90)}</span>
                           </span>
@@ -181,21 +167,21 @@ export default function Shell({ children }: { children: ReactNode }) {
             )}
           </form>
           <div className="flex shrink-0 items-center justify-end gap-2">
-            <Link to="/upload" aria-label="Upload" title="Upload" className="btn-glow grid h-9 w-9 place-items-center rounded-xl">
+            <Link to="/upload" aria-label="Upload" title="Upload" className="btn-glow grid h-9 w-9 pointer-coarse:size-11 place-items-center rounded-full">
               <UploadIcon />
             </Link>
             <button
               onClick={logout}
               aria-label="Sign out"
               title={user?.email ? `Sign out (${user.email})` : 'Sign out'}
-              className="grid h-9 w-9 place-items-center rounded-xl text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white"
+              className="grid h-9 w-9 pointer-coarse:size-11 place-items-center rounded-full text-zinc-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white"
             >
               <SignOutIcon />
             </button>
           </div>
         </nav>
       </header>
-      <main className="relative z-10 mx-auto max-w-6xl px-4 py-8">{children}</main>
+      <main className="relative z-10 mx-auto max-w-6xl px-4 py-12 md:py-16">{children}</main>
     </div>
   )
 }

@@ -384,8 +384,9 @@ per GB.
 
 ### Later
 
-- Go public: CloudFront and WAF, rate limits on Ask and uploads, and a
-  monthly cost check against the remaining credits.
+- Go public: switch on WAF (`waf_enabled`), move the Ask rate limit from the
+  API's memory to Postgres, HTTPS from CloudFront to the ALB once there is a
+  domain, and a monthly cost check against the remaining credits.
 - Sharing a highlight reel (a share link that spans several videos)
 - Postgres full-text search over transcripts and screen text, when
   libraries outgrow file scanning.
@@ -442,6 +443,7 @@ checks such as reading a state machine run.
 | Bedrock summary, S3 writes of small results | Step Functions service integrations | State machine definition |
 | Bedrock answer (Ask) | The API, SigV4-signed with Go stdlib | `internal/awsapi` |
 | Aurora sign-in token | The API, SigV4-signed with Go stdlib | `internal/db` |
+| Start an HD export | The API, async Lambda invoke SigV4-signed with Go stdlib (task role) | `internal/awsapi` |
 | Run the workers | Step Functions `lambda:invoke` and a Distributed Map | State machine definition |
 | Worker S3 reads and writes | AWS SDK for Go v2, in the Lambda code only | `cmd/worker` |
 | Update video status | Step Functions -> RDS Data API -> `set_video_status` | State machine definition |

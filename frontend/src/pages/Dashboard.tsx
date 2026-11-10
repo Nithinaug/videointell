@@ -30,7 +30,7 @@ export default function Dashboard() {
 
   return (
     <Shell>
-      <h1 className="font-display mb-6 text-3xl font-bold tracking-tight text-white">Videos</h1>
+      <h1 className="font-display title-xl mb-10 text-white">Videos</h1>
 
       {blocked ? (
         <div className="glass rounded-3xl px-6 py-16 text-center">
@@ -45,14 +45,14 @@ export default function Dashboard() {
         </div>
       ) : videos.length === 0 ? (
         <div className="glass rounded-3xl px-6 py-20 text-center">
-          <p className="text-slate-400">No videos yet.</p>
+          <p className="text-zinc-400">No videos yet.</p>
           <Link to="/upload" className="btn-glow mt-5 inline-block rounded-xl px-5 py-2.5 text-sm font-semibold text-white">
             Upload
           </Link>
         </div>
       ) : (
         <motion.div
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 [grid-auto-flow:dense]"
+          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 [grid-auto-flow:dense]"
           initial="hidden"
           animate="show"
           variants={{ show: { transition: { staggerChildren: 0.05 } } }}

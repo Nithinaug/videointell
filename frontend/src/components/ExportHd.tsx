@@ -3,7 +3,7 @@ import type { HdExport } from '../lib/useHdExport'
 
 export default function ExportHd({ hd, resultsUrl, title }: { hd: HdExport; resultsUrl?: string; title: string }) {
   if (!hd.available) return null
-  const base = 'flex h-9 items-center gap-2 rounded-xl px-3 text-xs text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white'
+  const base = 'flex h-9 pointer-coarse:h-11 items-center gap-2 rounded-full px-3 text-xs text-zinc-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white'
   const url = hd.downloadUrl(resultsUrl, title)
   if (url) {
     return (

@@ -15,13 +15,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!token) startLogin()
   }, [token])
-  if (!token) return <div className="min-h-screen flex items-center justify-center bg-[#05060a] text-slate-400">Redirecting to sign in...</div>
+  if (!token) return <div className="min-h-screen flex items-center justify-center bg-page text-zinc-400">Redirecting to sign in...</div>
   return <>{children}</>
 }
 
 function Page({ children }: { children: ReactNode }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.25, ease: 'easeOut' }}>
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}>
       {children}
     </motion.div>
   )

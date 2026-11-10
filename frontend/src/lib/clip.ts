@@ -41,7 +41,8 @@ export function blobURL(playlist: string) {
   return URL.createObjectURL(new Blob([playlist], { type: 'application/vnd.apple.mpegurl' }))
 }
 
-export async function loadVariant(base: string) {
+export async function loadVariant(relBase: string) {
+  const base = new URL(relBase, location.href).href
   const master = await (await fetch(base + 'hls/master.m3u8')).text()
   const rendition = master.split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#'))
   if (!rendition) return null

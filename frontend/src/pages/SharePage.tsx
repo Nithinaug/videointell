@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { shareView, type Clip, type Segment, type ShareView, type Summary } from '../api/client'
 import ClipControls from '../components/ClipControls'
-import { Aurora } from '../components/Shell'
 import { loadClip } from '../lib/clip'
 import { clock } from '../lib/time'
 import { ChapterStrip, Transcript } from './VideoDetail'
@@ -200,8 +199,7 @@ export default function SharePage() {
 
   if (gone) {
     return (
-      <div className="relative grid min-h-screen place-items-center bg-[#0c0c0e] px-4 text-center text-zinc-200">
-        <Aurora />
+      <div className="relative grid min-h-screen place-items-center bg-page px-4 text-center text-zinc-200">
         <div className="relative">
           <h1 className="font-display text-2xl font-semibold text-white">Link not available</h1>
           <p className="mt-2 text-sm text-zinc-400">This link has expired, been cancelled, or the video was removed.</p>
@@ -211,12 +209,11 @@ export default function SharePage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-clip bg-[#0c0c0e] text-zinc-200">
-      <Aurora />
+    <div className="relative min-h-screen overflow-x-clip bg-page text-zinc-200">
       <main className="relative z-10 mx-auto max-w-6xl space-y-5 px-4 py-8">
         <header>
           <p className="text-xs uppercase tracking-[0.15em] text-zinc-500">Shared video</p>
-          <h1 className="font-display mt-1 text-2xl font-semibold tracking-tight text-white md:text-3xl">{view?.title ?? ' '}</h1>
+          <h1 className="font-display title-xl mt-1 text-white">{view?.title ?? ' '}</h1>
         </header>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0 space-y-4">

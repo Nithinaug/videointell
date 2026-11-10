@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { motion } from 'motion/react'
+import { animate, motion, useReducedMotion } from 'motion/react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Hls from 'hls.js'
 import { canDelete, deleteVideo, getProgress, renameVideo, getResults, getVideoDetail, progressPercent, type Clip, type Segment, type Results, type VideoDetail as VideoDetailT } from '../api/client'
@@ -41,7 +41,7 @@ export function ChapterStrip({
   }, [active])
 
   return (
-    <nav aria-label="Chapters" className="fade-in flex gap-3 overflow-x-auto snap-x pb-2 -mx-4 px-4">
+    <nav aria-label="Chapters" className="fade-in scrollbar-none flex gap-3 overflow-x-auto snap-x pb-2 -mx-4 px-4">
       {chapters.map((c, i) => {
         const end = starts[i + 1] ?? duration
         const progress = i < active ? 1 : i === active && end > starts[i] ? (time - starts[i]) / (end - starts[i]) : 0
@@ -52,19 +52,19 @@ export function ChapterStrip({
             aria-current={i === active}
             onClick={() => onSeek(starts[i])}
             className={`group snap-start shrink-0 w-44 text-left rounded-xl overflow-hidden ring-1 transition duration-200 ${
-              i === active ? 'ring-white/40 bg-white/[0.06]' : 'ring-white/10 bg-white/[0.02] hover:ring-white/25'
+              i === active ? 'ring-2 ring-amber-400 bg-white/[0.04]' : 'ring-white/10 bg-white/[0.02] hover:ring-white/25'
             }`}
           >
-            <div className="relative aspect-video bg-black">
+            <div className="relative aspect-video bg-scrim">
               <img
                 src={thumbFor(base, starts[i])}
                 alt=""
                 loading="lazy"
                 crossOrigin="anonymous"
                 onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
-                className="w-full h-full object-cover opacity-80 transition-opacity group-hover:opacity-100"
+                className={`w-full h-full object-cover transition-opacity group-hover:opacity-100 ${i === active ? 'opacity-100' : 'opacity-80'}`}
               />
-              <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/70 font-mono text-[10px] text-slate-200">
+              <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-scrim/70 font-mono text-[10px] text-on-scrim">
                 {c.start}
               </span>
               <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/10">
@@ -126,11 +126,11 @@ export function Transcript({ segments, screen, time, onSeek, filter }: { segment
             <button
               key={'screen' + s.from_ms}
               onClick={() => onSeek(s.from_ms / 1000)}
-              className="flex w-full gap-3 rounded-xl px-2 py-1.5 text-left text-sm text-slate-300 transition-colors hover:bg-white/5"
+              className="flex w-full gap-3 rounded-xl px-2 py-1.5 pointer-coarse:py-3 text-left text-sm text-zinc-300 transition-colors hover:bg-white/5"
             >
-              <span className="w-12 shrink-0 pt-0.5 font-mono text-xs text-slate-500">{clock(s.from_ms / 1000)}</span>
+              <span className="w-12 shrink-0 pt-0.5 font-mono text-xs text-zinc-500">{clock(s.from_ms / 1000)}</span>
               <span className="min-w-0">
-                <span className="mr-2 rounded bg-sky-400/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-200">On screen</span>
+                <span className="mr-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-200">On screen</span>
                 <span>{snippet(s.text, terms)}</span>
               </span>
             </button>
@@ -152,7 +152,7 @@ export function Transcript({ segments, screen, time, onSeek, filter }: { segment
             ref={i === active ? activeRef : undefined}
             aria-current={i === active}
             onClick={() => onSeek(s.from_ms / 1000)}
-            className={`flex w-full gap-3 rounded-lg px-2 py-1.5 text-left text-sm leading-relaxed transition-colors duration-200 ${
+            className={`flex w-full gap-3 rounded-lg px-2 py-1.5 pointer-coarse:py-3 text-left text-sm leading-relaxed transition-colors duration-200 ${
               i === active ? 'bg-white/[0.07] text-white' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
             }`}
           >
@@ -375,7 +375,7 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
                 transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}
               />
               <span className="text-sm text-zinc-400">
-                Processing...{percent !== null && <span className="ml-1.5 tabular-nums text-zinc-200">{percent}%</span>}
+                Processing...{percent !== null && <CountUp value={percent} />}
               </span>
             </div>
           </div>
@@ -409,7 +409,6 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
           <track kind="captions" srcLang="en" label="English" src={base + 'transcript.vtt'} />
         </video>
         )}
-        {!clip && base && <p className="mt-2 hidden text-center text-[11px] text-zinc-600 lg:block">Space play · ← → 5 s · F fullscreen · M mute · / search</p>}
         {clip && clipView && <ClipControls playing={playing} position={rel} length={clipView.length} onToggle={clipToggle} onSeek={clipSeek} fullscreenTarget={box} />}
       </motion.div>
         {!results ? (
@@ -427,7 +426,7 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
               role="tab"
               aria-selected={tab === t}
               onClick={() => setTab(t)}
-              className={`flex-1 rounded-lg px-3 py-1.5 text-sm capitalize transition-colors ${tab === t ? 'bg-white/[0.08] font-medium text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+              className={`flex-1 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm capitalize transition-colors ${tab === t ? 'bg-white/[0.08] font-medium text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
             >
               {t}
             </button>
@@ -442,14 +441,19 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
             </div>
           ) : tab === 'transcript' ? (
             <>
-              <div className="mb-2 flex items-center justify-end gap-1 text-xs text-zinc-500">
-                <DownloadIcon className="h-3.5 w-3.5" />
-                <button onClick={() => downloadVtt(base!, detail.video.title).catch(() => alert('Could not download the subtitles. Try again.'))} className="rounded px-1.5 py-0.5 hover:bg-white/5 hover:text-white">
-                  VTT
-                </button>
-                <button onClick={() => downloadTxt(results.transcript, detail.video.title)} className="rounded px-1.5 py-0.5 hover:bg-white/5 hover:text-white">
-                  TXT
-                </button>
+              <div className="mb-3 flex items-center justify-end gap-2 text-xs">
+                <span className="flex items-center gap-1.5 text-zinc-500">
+                  <DownloadIcon className="h-3.5 w-3.5" />
+                  Download
+                </span>
+                <div role="group" aria-label="Download transcript" className="flex rounded-full bg-white/[0.06] p-0.5">
+                  <button onClick={() => downloadVtt(base!, detail.video.title).catch(() => alert('Could not download the subtitles. Try again.'))} title="Subtitles file for video players" className="rounded-full px-3 py-1 pointer-coarse:py-3 font-medium text-zinc-300 transition-colors hover:bg-white/10 hover:text-white">
+                    Subtitles <span className="text-zinc-500">.vtt</span>
+                  </button>
+                  <button onClick={() => downloadTxt(results.transcript, detail.video.title)} title="Plain text transcript" className="rounded-full px-3 py-1 pointer-coarse:py-3 font-medium text-zinc-300 transition-colors hover:bg-white/10 hover:text-white">
+                    Text <span className="text-zinc-500">.txt</span>
+                  </button>
+                </div>
               </div>
               {asked.length >= 2 ? (
                 <AskCard q={asked} videoId={detail.video.id} onSeek={seek} />
@@ -480,7 +484,7 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
                   <ul className="space-y-1">
                     {results.summary.takeaways.filter((k) => typeof k.at === 'string' && Number.isFinite(toSeconds(k.at))).map((k) => (
                       <li key={k.at + k.text}>
-                        <button onClick={() => seek(toSeconds(k.at))} className="flex w-full gap-3 rounded-lg px-2 py-1.5 text-left text-sm text-zinc-300 hover:bg-white/5">
+                        <button onClick={() => seek(toSeconds(k.at))} className="flex w-full gap-3 rounded-lg px-2 py-1.5 pointer-coarse:py-3 text-left text-sm text-zinc-300 hover:bg-white/5">
                           <span className="w-10 shrink-0 pt-0.5 tabular-nums text-xs text-amber-300">{clock(toSeconds(k.at))}</span>
                           <span>{k.text}</span>
                         </button>
@@ -495,6 +499,31 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
       </aside>
     </div>
   )
+}
+
+function CountUp({ value }: { value: number }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const from = useRef(value)
+  const reduce = useReducedMotion()
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (reduce) {
+      el.textContent = `${value}%`
+      from.current = value
+      return
+    }
+    const controls = animate(from.current, value, {
+      duration: 0.6,
+      ease: 'easeOut',
+      onUpdate: (v) => {
+        el.textContent = `${Math.round(v)}%`
+      },
+    })
+    from.current = value
+    return () => controls.stop()
+  }, [value, reduce])
+  return <span ref={ref} className="ml-1.5 tabular-nums text-zinc-200">{value}%</span>
 }
 
 export default function VideoDetail() {
@@ -598,19 +627,20 @@ export default function VideoDetail() {
               />
             ) : (
               <>
-                <h1 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-white">{video.title}</h1>
+                <h1 className="font-display title-xl text-white">{video.title}</h1>
                 {video.status === 'ready' && (
-                  <button onClick={() => setEditing(true)} aria-label="Rename video" title="Rename video" className="grid h-8 w-8 place-items-center rounded-lg text-zinc-500 transition-colors hover:bg-white/5 hover:text-white">
+                  <button onClick={() => setEditing(true)} aria-label="Rename video" title="Rename video" className="grid h-8 w-8 pointer-coarse:size-11 place-items-center rounded-full text-zinc-500 transition-colors hover:bg-white/5 hover:text-white">
                     <PencilIcon className="h-3.5 w-3.5" />
                   </button>
                 )}
               </>
             )}
+            <div className="ml-auto flex items-center gap-2">
             {video.status === 'ready' && (
-              <div className="ml-auto flex items-center gap-2">
+              <>
                 <ExportHd hd={hd} resultsUrl={detail.results_url} title={video.title} />
                 <ShareMenu videoId={video.id} title={video.title} hd={hd} resultsUrl={detail.results_url} />
-              </div>
+              </>
             )}
             {canDelete(video.status) && (
               <button
@@ -618,17 +648,18 @@ export default function VideoDetail() {
                 disabled={deleting}
                 aria-label="Delete video"
                 title="Delete video"
-                className={`${video.status === 'ready' ? '' : 'ml-auto '}grid h-9 w-9 place-items-center rounded-xl text-slate-300 ring-1 ring-white/10 transition-colors hover:bg-red-500/15 hover:text-red-200 hover:ring-red-400/40 disabled:opacity-50`}
+                className={`grid h-9 w-9 pointer-coarse:size-11 place-items-center rounded-full text-zinc-300 ring-1 ring-white/10 transition-colors hover:bg-red-500/15 hover:text-red-200 hover:ring-red-400/40 disabled:opacity-50`}
               >
                 <TrashIcon />
               </button>
             )}
+            </div>
           </div>
-          <p className="text-xs text-slate-500">{new Date(video.created_at).toLocaleString()}</p>
+          <p className="text-xs text-zinc-500">{new Date(video.created_at).toLocaleString()}</p>
         </header>
 
         {!detail.url ? (
-          <div className="glass rounded-3xl p-6 text-sm text-slate-400">Upload still in progress...</div>
+          <div className="glass rounded-3xl p-6 text-sm text-zinc-400">Upload still in progress...</div>
         ) : video.status === 'failed' ? (
           <div className="glass rounded-3xl border-red-400/30 p-6 text-sm text-red-300">Processing failed.</div>
         ) : (
