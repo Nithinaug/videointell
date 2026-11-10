@@ -85,8 +85,13 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.web.arn
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
   }
 }
 
@@ -100,9 +105,33 @@ resource "aws_lb_listener_rule" "api" {
     }
   }
 
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [local.base.origin_secret]
+    }
+  }
+
   action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api.arn
+  }
+}
+
+resource "aws_lb_listener_rule" "web" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 20
+
+  condition {
+    http_header {
+      http_header_name = "X-Origin-Verify"
+      values           = [local.base.origin_secret]
+    }
+  }
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.web.arn
   }
 }
 
@@ -221,6 +250,19 @@ resource "aws_iam_role_policy" "api_task_bedrock" {
   })
 }
 
+resource "aws_iam_role_policy" "api_task_export" {
+  name = "invoke-worker-export"
+  role = aws_iam_role.api_task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = "lambda:InvokeFunction"
+      Resource = local.base.worker_function_arn
+    }]
+  })
+}
+
 resource "aws_cloudwatch_log_group" "app" {
   for_each          = toset(["api", "web"])
   name              = "/ecs/${local.name}-${each.key}"
@@ -255,6 +297,8 @@ resource "aws_ecs_task_definition" "api" {
       { name = "REQUIRE_MOUNT", value = "true" },
       { name = "COGNITO_USER_POOL_ID", value = local.base.cognito_user_pool_id },
       { name = "COGNITO_CLIENT_ID", value = local.base.cognito_client_id },
+      { name = "WORKER_FUNCTION", value = local.base.worker_function },
+      { name = "VIDEO_BUCKET", value = local.base.bucket },
     ]
     secrets     = [{ name = "JWT_SECRET", valueFrom = aws_ssm_parameter.jwt.arn }]
     mountPoints = [{ sourceVolume = "videos", containerPath = "/mnt/videos" }]
@@ -317,7 +361,7 @@ resource "aws_ecs_service" "app" {
     container_port   = each.value.port
   }
 
-  depends_on = [aws_lb_listener_rule.api, aws_iam_role_policy.execution_ssm]
+  depends_on = [aws_lb_listener_rule.api, aws_lb_listener_rule.web, aws_iam_role_policy.execution_ssm]
 }
 
 resource "aws_cloudwatch_metric_alarm" "api_5xx" {

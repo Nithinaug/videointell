@@ -75,9 +75,9 @@ accidental complexity.
 
 ## Design
 
-> Everything here is built except CloudFront and WAF, which wait on AWS
-> verifying the account. Until then the app runs in local hybrid mode (see
-> [Running locally](#running-locally)). The [Status](#status) list has details.
+> CloudFront is live in front of the ALB. WAF is written and switched off
+> (`waf_enabled`) until the public launch. Local hybrid mode still works for
+> development (see [Running locally](#running-locally)).
 
 - **ECS on EC2** runs the Go API and an Nginx server for the React build on
   one Auto Scaling group.
@@ -366,7 +366,7 @@ per GB.
 - **Share links:** a clip link opens the whole video (the clip plays first).
   Links cannot be cancelled from the UI yet; they expire after 7 days or when
   the video is deleted. In hybrid mode the API runs on the laptop, so links
-  only open there until CloudFront is up.
+  made there only open on that laptop.
 - **Search scale:** search reads every ready transcript per query. Fine for
   tens of videos; for hundreds, move to Postgres full-text search filled
   when the pipeline marks a video ready.
@@ -453,93 +453,13 @@ checks such as reading a state machine run.
 
 The AWS SDK appears only in `cmd/worker`. No CDK, SAM or CloudFormation.
 
-## Status
-
-Done:
-- [x] Go API, Postgres, React frontend
-- [x] Uploads and playback through local storage with HMAC-signed URLs
-- [x] AWS SDK removed: the API only writes and reads files (designed for the
-      Mountpoint folder on AWS, not yet tested there)
-- [x] Upload handler sets `uploaded` and writes the `.done` marker;
-      `set_video_status` function added; `/complete` removed
-- [x] Terraform: S3 bucket (imported from the Console, `prevent_destroy`),
-      EventBridge rule on `uploads/*.done` logging to CloudWatch Logs until
-      Step Functions is the target
-
-- [x] Upload filenames cleaned to `[A-Za-z0-9._-]`, so S3 keys never need
-      URL encoding in events
-- [x] Terraform: SNS topic and a first Step Functions pipeline (Rekognition
-      labels on the upload, `labels.json` to S3, SNS email; Retry on
-      throttling, failure alert), started by the EventBridge rule
-
-- [x] Go worker (`cmd/worker`): ffmpeg HLS ladder capped at the source
-      height, thumbnails, H.264 MP4, whisper.cpp transcript, Bedrock request
-      body; tested end to end with ffmpeg and a stand-in whisper script
-
-- [x] Dockerfiles for the API (distroless), the worker (ffmpeg, whisper.cpp
-      v1.9.5 with the `base` model) and Nginx; worker image run locally with
-      real whisper.cpp
-- [x] Terraform for the AWS worker: ECR repository, VPC with public subnets
-      and S3 endpoint, ECS cluster, worker Auto Scaling group (0 to 1
-      `c7i-flex.large`, Free plan eligible) with Mountpoint in the launch
-      template, capacity provider, task definition; the pipeline runs the
-      worker before Rekognition
-
-- [x] Worker image pushed; pipeline run on AWS end to end (`.done` marker ->
-      worker on a fresh instance -> Rekognition -> `labels.json`): about
-      3.5 min from a cold start, about 40 s when an instance is already up
-- [x] Bedrock step: Nova Lite reads the worker's request from S3 and
-      `summary.json` (summary, chapters, tags) is saved; run on AWS end to end
-- [x] Results page: HLS player with poster and captions, summary, chapters
-      that follow playback, tags, labels; files served through one signed
-      results-folder URL (`/api/results/<exp>/<sig>/processed/...`)
-
-To do, in build order:
-- [x] Aurora Serverless v2 (express, created in the Console and imported into
-      Terraform), Data API with a `pipeline` user in Secrets Manager; the
-      pipeline claims the video (`uploaded -> processing`, stops if not
-      claimed), then sets `ready` with results or `failed`; run on AWS
-- [x] App stack (`infra/app/`, torn down on its own): ALB, API Auto Scaling
-      group (1 `t3.small`, Mountpoint), API and Nginx on ECS; the API signs
-      Aurora IAM tokens with stdlib SigV4; secrets in SSM Parameter Store
-- [x] Processing moved from the EC2 worker to Lambda fan-out: split into
-      15 s chunks, Distributed Map (up to 1,000 Lambdas), assemble;
-      Rekognition runs on the upload in parallel; 58 s for the test clip
-- [x] Cognito user pool (Essentials tier, managed login v2, branding edited
-      in the Console), PKCE sign-in in the app, API verifies ID tokens;
-      password login removed; tested locally against the real pool
-- [ ] CloudFront in front of the ALB (written, behind `cloudfront_enabled`;
-      waiting for AWS to verify the account for CloudFront)
-- [x] Operations: AWS Budget on gross usage (credits excluded, $25 a month,
-      alerts at 80% actual and 100% forecast), multi-Region CloudTrail into
-      its own bucket (30-day expiry), CloudWatch alarms (pipeline failed,
-      worker Lambda errors and throttles, API 5xx), all to the SNS topic
-- [x] App: graphite and amber theme with Motion, delete (S3 and Aurora),
-      transcript that follows playback, search that opens the video at the
-      moment
-- [x] Rekognition labels removed (not used); chunks cut to 15 s
-- [x] On-screen text search: Tesseract in the worker Lambda, `screen.json`,
-      matches marked "On screen"
-- [x] One search box: type-ahead suggestions, Enter for all results and an
-      AI answer (Nova Lite, SigV4-signed from the API) for this video or all
-      videos
-- [x] Clips with clip-only playback; share links for videos and clips
-      (7 days, shown once, own signing scope)
-- [x] Video page: player and chapters on the left, a sidebar with
-      Transcript, Clips and Summary tabs; icon buttons; processing shows a
-      percentage
-- [x] Cognito sign-in page styled from Terraform; minimum password length 8
-- [ ] WAF on CloudFront (after CloudFront)
-- [ ] Public launch: rate limits, cost check, security pass
-- [x] Highlight reels: "Watch all N moments" on the Search page (shown when matches come from 2+ videos) joins every matching moment (2 s before to 12 s after) across videos into one HLS playlist in the browser
-
 ## How this is being built
 
 - **Frontend**: React + TypeScript + Vite + Tailwind
 - **Backend**: Go (Gin) API, Postgres, no AWS SDK (signs its Aurora IAM
   token and Bedrock calls with stdlib SigV4)
 - **Workers**: one `cmd/worker` Lambda image with ffmpeg, whisper.cpp and
-  Tesseract and three operations (`split`, `chunk`, `assemble`). Lambda cannot use
+  Tesseract and four operations (`split`, `chunk`, `assemble`, `export`). Lambda cannot use
   Mountpoint, so this is the one place the AWS SDK is used (S3 get and put)
 - **Infrastructure**: AWS Console to learn each service, then Terraform
 
@@ -548,9 +468,9 @@ To do, in build order:
 ```
 backend/
   cmd/server/         API server entrypoint
-  cmd/worker/         Lambda entrypoint (split, chunk, assemble; S3 via SDK)
+  cmd/worker/         Lambda entrypoint (split, chunk, assemble, export; S3 via SDK)
   internal/worker/    ffmpeg, whisper.cpp, Tesseract, playlist and transcript stitching
-  internal/awsapi/    stdlib SigV4 signer and the Bedrock Converse client
+  internal/awsapi/    stdlib SigV4 signer, the Bedrock Converse client and the async Lambda invoke
   internal/config/    env-based configuration
   internal/db/        Postgres connection + embedded SQL migrations
   internal/models/    shared data types
@@ -600,8 +520,8 @@ npm run dev
 Open `http://localhost:5173` and sign up on the Cognito page. Uploads are
 saved under `backend/data/`, which the pipeline never sees.
 
-**Hybrid mode (local app, real pipeline):** this is how the app runs until
-CloudFront is up. Mount the bucket with Mountpoint for S3 and start the API
+**Hybrid mode (local app, real pipeline):** for development against the
+real AWS pipeline. Mount the bucket with Mountpoint for S3 and start the API
 with `backend/run-hybrid.sh`, which loads your AWS CLI credentials and reads
 the Aurora endpoint and Cognito IDs from the Terraform outputs. Uploads land
 in S3, the Lambda pipeline processes them, and Ask calls Bedrock with your
@@ -613,67 +533,78 @@ backend/run-hybrid.sh
 ```
 
 The API runs its SQL migrations on every start (`internal/db/migrations`,
-all idempotent): `0004` adds `clips`, `0005` adds `share_links`.
+all idempotent): `0004` adds `clips`, `0005` adds `share_links`, `0006`
+adds `exports`.
 
-## Environment variables
+## Deploying to AWS
 
-### Backend
+Run from the repo root. The base stack is cheap and stays up; the app stack
+bills by the hour (ALB and one `t3.small`), so destroy it at the end of each
+session.
 
-Read from the process environment (`.env` files are not loaded automatically).
-Every variable has a local-dev default.
+1. Base stack, with CloudFront off the first time so it is not created
+   before the ALB exists. On a brand-new account, run
+   `terraform -chdir=infra apply -target=aws_ecr_repository.worker` and push
+   the worker image (step 2) first, because the Lambda reads its digest:
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `8080` | API listen port |
-| `DATABASE_URL` | `postgres://videointell:videointell@localhost:5432/videointell?sslmode=disable` | Postgres connection string; on AWS built from the Secrets Manager value ECS injects |
-| `JWT_SECRET` | `dev-secret-change-me` | Signs the short-lived `/api/files/...` and `/api/results/...` URLs (HMAC-SHA256); outside local dev, use at least 32 random bytes |
-| `COGNITO_USER_POOL_ID` | _(required)_ | `terraform -chdir=infra output -raw cognito_user_pool_id` |
-| `COGNITO_CLIENT_ID` | _(required)_ | `terraform -chdir=infra output -raw cognito_client_id` |
-| `LOCAL_DATA_DIR` | `./data` | Video folder; `/mnt/videos` (Mountpoint for S3) on AWS |
-| `REQUIRE_MOUNT` | _(empty)_ | Set to `true` on AWS: the API refuses to start if `LOCAL_DATA_DIR` is not a mount point, so uploads never land on the instance disk by mistake |
-| `DB_IAM_HOST` | _(empty)_ | Aurora endpoint; when set, the API connects with an IAM token it signs itself instead of `DATABASE_URL` |
-| `DB_USER` | `api` | Database user for IAM sign-in |
-| `DB_NAME` | `videointell` | Database name for IAM sign-in |
-| `AWS_REGION` | `ap-south-1` | Region for the IAM token, Bedrock and the Cognito issuer |
-| `BEDROCK_MODEL_ID` | `apac.amazon.nova-lite-v1:0` | Inference profile the Ask answer uses |
-| `MAX_UPLOAD_MB` | `1024` | Largest upload; checked when the video is created and while the file is written |
-| `MAX_UPLOADS_PER_DAY` | `3` | New videos per user in any 24 hours |
-| `MAX_UPLOADS_PER_DAY_TOTAL` | `30` | New videos across the whole site in any 24 hours; caps the Lambda spend |
-| `ASK_PER_HOUR` | `30` | AI answers per user per hour (counted in the API's memory) |
-| `MAX_USERS` | `100` | Accounts allowed; a new sign-in past this gets "sign-ups are full" |
-| `WORKER_FUNCTION` | empty | Name of the worker Lambda; HD export is off while it is empty (`run-hybrid.sh` sets it) |
-| `VIDEO_BUCKET` | empty | Bucket the worker reads the original from (`run-hybrid.sh` sets it) |
-| `EXPORTS_PER_DAY` | `5` | HD exports per user in any 24 hours (counted in the API's memory) |
+   ```bash
+   terraform -chdir=infra apply -var cloudfront_enabled=false
+   ```
 
-### Worker
+2. Worker image (the Lambda is pinned to the image digest, so apply the
+   base stack again after pushing a new one):
 
-Build and push the Lambda image, then `terraform apply` (the function is
-pinned to the image digest):
+   ```bash
+   REPO=$(terraform -chdir=infra output -raw worker_repository)
+   aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${REPO%%/*}
+   docker build --provenance=false -t $REPO:latest -f backend/Dockerfile.worker backend && docker push $REPO:latest
+   ```
 
-```bash
-REPO=$(terraform -chdir=infra output -raw worker_repository)
-aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${REPO%%/*}
-docker build --provenance=false -t $REPO:latest -f backend/Dockerfile.worker backend && docker push $REPO:latest
-```
+3. API and web images. The web build leaves `VITE_API_BASE_URL` empty
+   because CloudFront serves the app and the API from one origin:
 
-| Variable | Default | Description |
-|---|---|---|
-| `WHISPER_MODEL` | `/models/whisper.bin` in the image | whisper.cpp model file |
-| `TESSERACT_BIN` | `/usr/bin/tesseract` in the image | Reads on-screen text every 3 s into `screen.json`; empty skips it |
-| `CHUNK_SECONDS` | `15` (Terraform `chunk_seconds`) | Chunk length for the fan-out |
-| `MAX_VIDEO_MINUTES` | `20` (Terraform `max_video_minutes`) | Split refuses longer videos before any chunk work, so the pipeline marks them failed |
+   ```bash
+   REPO=$(terraform -chdir=infra output -raw api_repository)
+   docker build --provenance=false -t $REPO:latest backend && docker push $REPO:latest
+   WEB=$(terraform -chdir=infra output -raw web_repository)
+   docker build --provenance=false --build-arg VITE_API_BASE_URL= \
+     --build-arg VITE_COGNITO_DOMAIN=$(terraform -chdir=infra output -raw cognito_domain) \
+     --build-arg VITE_COGNITO_CLIENT_ID=$(terraform -chdir=infra output -raw cognito_client_id) \
+     -t $WEB:latest frontend && docker push $WEB:latest
+   ```
 
-Terraform variables: `max_chunk_workers` (Map concurrency, 1000),
-`worker_memory_mb` (10240; use 3008 if the account caps Lambda memory).
-`go test ./internal/worker/` runs split, chunk and assemble locally with a
-folder in place of S3.
+4. App stack, then the base stack again with CloudFront on
+   (`cloudfront_enabled = true` in `infra/terraform.tfvars`). This also adds
+   the CloudFront address to Cognito's callback URLs:
 
-### Frontend
+   ```bash
+   terraform -chdir=infra/app apply
+   terraform -chdir=infra apply
+   terraform -chdir=infra output -raw app_url
+   ```
 
-Put these in `frontend/.env.local` (git-ignored; Vite loads it automatically).
+   CloudFront sends a random secret in an `X-Origin-Verify` header (the
+   `origin_secret` Terraform output, kept in base state), and the ALB
+   forwards only requests that carry it; everything else gets a 403, so
+   another CloudFront distribution cannot reach the app. If the secret is
+   ever replaced, apply the base stack, wait for the distribution to show
+   Deployed, then apply the app stack; the site returns 403 in between.
 
-| Variable | Default | Description |
-|---|---|---|
-| `VITE_API_BASE_URL` | `http://localhost:8080` | Backend API base URL; empty behind CloudFront (same origin) |
-| `VITE_COGNITO_DOMAIN` | _(required)_ | `terraform -chdir=infra output -raw cognito_domain` |
-| `VITE_COGNITO_CLIENT_ID` | _(required)_ | `terraform -chdir=infra output -raw cognito_client_id` |
+5. WAF (optional): set `waf_enabled = true` and apply the base stack. It adds
+   a per-IP rate rule (`waf_rate_limit` requests per 5 minutes, default 2000)
+   and the AWS common and known-bad-inputs rule sets. The body-size rule is
+   set to count, and both rule sets skip signed upload `PUT`s to
+   `/api/files/`, so video bytes are never read as an attack. It costs about
+   $8 a month (estimate: $5 for the web ACL, $1 per rule, $0.60 per million
+   requests) and keeps billing while the app stack is down, so set
+   `waf_enabled = false` when it is not needed.
+
+6. End of session:
+
+   ```bash
+   terraform -chdir=infra/app destroy
+   ```
+
+   A base apply while the app stack is down points CloudFront at a
+   placeholder origin (`app-not-running.example.com`). The next app stack
+   gets a new ALB name, so apply the base stack again after bringing it back.

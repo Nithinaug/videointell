@@ -14,6 +14,10 @@ output "worker_function" {
   value = aws_lambda_function.worker.function_name
 }
 
+output "worker_function_arn" {
+  value = aws_lambda_function.worker.arn
+}
+
 output "pipeline" {
   value = aws_sfn_state_machine.pipeline.arn
 }
@@ -92,4 +96,9 @@ output "bedrock_profile_arn" {
 
 output "bedrock_model_arn" {
   value = local.bedrock_model_arn
+}
+
+output "origin_secret" {
+  value     = random_password.origin_secret.result
+  sensitive = true
 }

@@ -25,16 +25,27 @@ data "aws_cloudfront_origin_request_policy" "all_viewer" {
   name = "Managed-AllViewer"
 }
 
+resource "random_password" "origin_secret" {
+  length  = 40
+  special = false
+}
+
 resource "aws_cloudfront_distribution" "app" {
   count           = var.cloudfront_enabled ? 1 : 0
   enabled         = true
   comment         = "${local.name} app"
   price_class     = "PriceClass_200"
   is_ipv6_enabled = true
+  web_acl_id      = local.waf_on ? aws_wafv2_web_acl.app[0].arn : null
 
   origin {
     origin_id   = "alb"
     domain_name = data.terraform_remote_state.app.outputs.alb_dns
+
+    custom_header {
+      name  = "X-Origin-Verify"
+      value = random_password.origin_secret.result
+    }
 
     custom_origin_config {
       http_port              = 80
