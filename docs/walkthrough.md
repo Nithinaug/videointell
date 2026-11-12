@@ -1,4 +1,4 @@
-# Walkthrough: building the video pipeline on AWS
+# VidSearch walkthrough: building the video pipeline on AWS
 
 This guide explains what was built, why each piece exists, and how to build
 it yourself. Each AWS service has two ways to set it up:
@@ -23,12 +23,13 @@ way to check it works. Sections are added as each build step is finished.
 | Step 3: results page | 12 | Done |
 | Step 4: Aurora and video status | 13 | Done |
 | Step 5: app on ECS, Lambda fan-out | 14 | Done |
-| Step 6: Cognito sign-in | 15 | Done (CloudFront waiting on AWS verification) |
-| Step 7: operations | 16 | Done (WAF waits for CloudFront) |
+| Step 6: Cognito sign-in | 15 | Done |
+| Step 7: operations | 16 | Done (the WAF is optional and was never enabled) |
 | App features: redesign, delete, search | 17 | Done |
 | On-screen text, Ask, clips, share links | 18-21 | Done |
 | Sign-in page style and local hybrid mode | 22-23 | Done |
-| Step 8: demo, public launch, teardown | - | Not started |
+| Fully local stack with Docker Compose | 24 | Done |
+| Step 8: teardown | 25 | Done: all AWS resources destroyed |
 
 > **Read the early sections as history.** Sections 6 to 10 built an EC2
 > worker and a Rekognition step. Section 14 replaced the worker with Lambda,
@@ -1264,3 +1265,91 @@ and Bedrock, and uploads go through the real Lambda pipeline.
 - 404 on a new route: the API process is older than the code; restart it.
 - First request after a quiet spell is slow: Aurora was paused and takes
   15 to 30 seconds to wake.
+
+## 24. Running everything locally with Docker Compose
+
+**What:** `docker-compose.yml` runs the whole app on one machine with no
+Lambda, Step Functions or S3. It is the way to run the project after the
+AWS stacks are destroyed, except for sign-in (see the note below).
+
+| Service | What it does |
+|---|---|
+| `db` | Postgres 16 with a named volume |
+| `init-data` | One-shot job that gives the shared `videos` volume to the non-root user |
+| `api` | The Go API, with `LOCAL_WORKER=true` and uploads stored on the `videos` volume |
+| `worker` | `cmd/localworker`: watches the volume and runs the same split, chunk, assemble and export steps that the Lambdas run in AWS (transcript and OCR happen inside the chunk step) |
+| `web` | The built frontend served by nginx on port 5173 |
+
+1. Create `.env` next to `docker-compose.yml`. Four values are required:
+   `JWT_SECRET`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` and
+   `VITE_COGNITO_DOMAIN` (the full `https://` URL). Optional values
+   include `POSTGRES_PASSWORD`, `AWS_REGION`, `BEDROCK_MODEL_ID`, the three
+   `AWS_*` credential variables, `WORKER_CONCURRENCY` and
+   `MAX_VIDEO_MINUTES`.
+2. Make sure ports 8080 and 5173 are free.
+3. Start it:
+
+   ```bash
+   docker compose up --build
+   ```
+
+4. Open `http://localhost:5173`.
+
+**Common problems:**
+
+- `required variable ... is missing a value`: a required entry is missing
+  from `.env`.
+- `address already in use` on port 8080: a local `go run` of the backend
+  is still running. Stop it, then run
+  `docker compose up -d --force-recreate api web`.
+- Ask fails: it calls Bedrock from the API container, so it needs the AWS
+  credentials in `.env` and model access in `ap-south-1`.
+
+**Sign-in still needs AWS.** Login goes through the Cognito user pool, which
+lives in the base Terraform stack. With the pool destroyed, the local app
+cannot sign anyone in until the base stack is applied again.
+
+To remove everything this stack created, including its data:
+
+```bash
+docker compose down -v --rmi local
+```
+
+---
+
+## 25. Teardown
+
+**What:** end a session, or the whole project, so nothing keeps billing.
+
+1. Destroy the app stack (the ALB and the EC2 instance bill by the hour):
+
+   ```bash
+   terraform -chdir=infra/app destroy
+   ```
+
+2. Before destroying the base stack, turn off its guards and apply that
+   change: set `prevent_destroy = false` and `force_destroy = true` on the
+   uploads bucket in `s3.tf`, and `deletion_protection = "INACTIVE"` on the
+   Cognito pool in `cognito.tf`. Then:
+
+   ```bash
+   terraform -chdir=infra apply
+   terraform -chdir=infra destroy
+   ```
+
+3. Check that nothing is left, and check the remaining credits:
+
+   ```bash
+   aws resourcegroupstaggingapi get-resources --region ap-south-1 --query 'ResourceTagMappingList[].ResourceARN'
+   aws freetier get-account-plan-state --region us-east-1
+   ```
+
+   The tagging list can show deleted resources for a while. Confirm with
+   `describe` calls, and check that no EC2 instances, Aurora clusters or
+   load balancers are running.
+
+4. Delete any IAM user and access key created only for running Ask locally.
+
+**What does not come back after a new apply:** uploaded videos, the
+database, Cognito users and the images in ECR. Rebuild and push the images
+(README, "Deploying to AWS") and sign up again.
