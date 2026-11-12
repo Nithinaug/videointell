@@ -1,58 +1,35 @@
+@import "./styles/tokens.css";
 @import "tailwindcss";
 
-@theme {
-  --color-page: oklch(0.13 0.004 286);
-  --color-ink: oklch(0.967 0.001 286);
-  --color-surface: oklch(0.19 0.005 286);
-  --color-scrim: oklch(0 0 0);
-  --color-on-scrim: oklch(0.985 0 0);
-  --color-accent: oklch(0.795 0.162 70);
-  --color-accent-deep: oklch(0.666 0.157 58);
-  --color-accent-ink: oklch(0.21 0.04 70);
-  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', 'Inter', system-ui, sans-serif;
-  --ease-apple: cubic-bezier(0.22, 1, 0.36, 1);
+@theme inline {
+  --ease-theme: var(--ease-theme);
+  --color-canvas: var(--bg-canvas);
+  --color-surface: var(--bg-surface);
+  --color-subtle: var(--bg-subtle);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-ink-primary: var(--ink-primary);
+  --color-ink-muted: var(--ink-muted);
+  --color-accent: var(--accent);
+  --color-accent-alt: var(--accent-alt);
+  --color-accent-ink: var(--accent-ink);
+  --color-danger: var(--danger);
+  --color-scrim: var(--scrim);
+  --color-on-scrim: var(--on-scrim);
+  --font-display: var(--font-display);
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+  --radius-outer: var(--radius-outer);
+  --radius-inner: var(--radius-inner);
+  --shadow-surface: var(--surface-shadow);
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --color-page: oklch(0.97 0.002 286);
-    --color-ink: oklch(0.21 0.006 286);
-    --color-surface: oklch(1 0 0);
-    --color-white: oklch(0.21 0.006 286);
-    --color-black: oklch(1 0 0);
-    --color-zinc-50: oklch(14.1% 0.005 285.823);
-    --color-zinc-100: oklch(21% 0.006 285.885);
-    --color-zinc-200: oklch(27.4% 0.006 286.033);
-    --color-zinc-300: oklch(37% 0.013 285.805);
-    --color-zinc-400: oklch(44.2% 0.017 285.786);
-    --color-zinc-500: oklch(52% 0.016 285.938);
-    --color-zinc-600: oklch(70.5% 0.015 286.067);
-    --color-zinc-700: oklch(87.1% 0.006 286.286);
-    --color-zinc-800: oklch(92% 0.004 286.32);
-    --color-zinc-900: oklch(96.7% 0.001 286.375);
-    --color-zinc-950: oklch(98.5% 0 0);
-    --color-accent: oklch(0.567 0.196 256);
-    --color-accent-deep: oklch(0.49 0.18 256);
-    --color-accent-ink: oklch(1 0 0);
-    --color-amber-200: oklch(0.47 0.16 256);
-    --color-amber-300: oklch(0.522 0.176 256);
-    --color-amber-400: oklch(0.567 0.196 256);
-    --color-amber-500: oklch(0.567 0.196 256);
-    --color-red-200: oklch(44.4% 0.177 26.899);
-    --color-red-300: oklch(50.5% 0.213 27.518);
-  }
+@media (prefers-reduced-motion: reduce) {
+  :root, [data-theme] { --duration-theme: 0ms; }
 }
 
 body {
   margin: 0;
-  font-family: var(--font-sans);
-  background: var(--color-page);
-  color: var(--color-ink);
-  -webkit-font-smoothing: antialiased;
-}
-
-h1, h2, h3 {
-  text-wrap: balance;
 }
 
 p, li, figcaption {
@@ -74,7 +51,7 @@ p, li, figcaption {
 }
 
 .shimmer {
-  background: linear-gradient(90deg, oklch(0.5 0 0 / 0.06) 0%, oklch(0.5 0 0 / 0.14) 50%, oklch(0.5 0 0 / 0.06) 100%);
+  background: linear-gradient(90deg, color-mix(in oklch, var(--ink-primary) 6%, transparent) 0%, color-mix(in oklch, var(--ink-primary) 14%, transparent) 50%, color-mix(in oklch, var(--ink-primary) 6%, transparent) 100%);
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
@@ -85,7 +62,7 @@ p, li, figcaption {
 }
 
 .fade-in {
-  animation: fade-in 500ms var(--ease-apple) both;
+  animation: fade-in 260ms var(--ease-theme) both;
 }
 
 @keyframes fade-in {
@@ -93,43 +70,39 @@ p, li, figcaption {
   to { opacity: 1; transform: none; }
 }
 
-.font-display {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', 'Inter', system-ui, sans-serif;
-  letter-spacing: -0.02em;
-}
-
 .glass {
-  background: var(--color-surface);
-  box-shadow: 0 1px 2px oklch(0 0 0 / 0.06), 0 8px 24px oklch(0 0 0 / 0.08);
+  background: var(--bg-surface);
+  border: var(--border-width) solid var(--border-subtle);
+  box-shadow: var(--surface-shadow);
 }
 
 .glass-bar {
-  background: color-mix(in oklch, var(--color-page) 72%, transparent);
-  border: 1px solid oklch(0.5 0 0 / 0.12);
+  background: color-mix(in oklch, var(--bg-canvas) 72%, transparent);
+  border: var(--border-width) solid var(--border-subtle);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
 }
 
 .lift {
-  transition: transform 500ms var(--ease-apple), box-shadow 500ms var(--ease-apple);
+  transition: transform var(--duration-theme) var(--ease-theme);
 }
 
 .lift:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 2px 4px oklch(0 0 0 / 0.06), 0 16px 40px oklch(0 0 0 / 0.14);
+  transform: translateY(-2px);
 }
 
 .btn-glow {
-  position: relative;
-  background: var(--color-accent);
-  color: var(--color-accent-ink);
-  box-shadow: 0 4px 14px -4px color-mix(in oklch, var(--color-accent-deep) 50%, transparent);
-  transition: box-shadow 300ms var(--ease-apple), transform 300ms var(--ease-apple), filter 300ms;
+  background: var(--accent);
+  color: var(--accent-ink);
+  transition: transform var(--duration-theme) var(--ease-theme), opacity var(--duration-theme) var(--ease-theme);
 }
 
 .btn-glow:hover {
-  filter: brightness(1.06);
-  box-shadow: 0 8px 24px -6px color-mix(in oklch, var(--color-accent-deep) 60%, transparent);
+  opacity: 0.9;
+}
+
+.btn-glow:active {
+  transform: scale(0.98);
 }
 
 .pulse-dot {
@@ -144,4 +117,24 @@ p, li, figcaption {
 @media (prefers-reduced-motion: reduce) {
   .shimmer, .fade-in, .pulse-dot { animation: none; }
   .lift, .lift:hover { transition: none; transform: none; }
+}
+
+.spotlight {
+  position: relative;
+  isolation: isolate;
+}
+
+.spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), color-mix(in oklch, var(--accent) 14%, transparent), transparent 70%);
+  transition: opacity var(--duration-theme) var(--ease-theme);
+}
+
+.spotlight:hover::before {
+  opacity: 1;
 }

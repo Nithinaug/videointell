@@ -33,33 +33,33 @@ export default function AskCard({ q, videoId, onSeek }: { q: string; videoId?: s
   }, [q, videoId])
 
   return (
-    <motion.section ref={box} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass mb-4 rounded-3xl p-5 scroll-mt-4" aria-live="polite">
-      <h2 className="text-xs font-semibold uppercase tracking-[0.15em] text-amber-300">Answer from {where}</h2>
+    <motion.section ref={box} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass mb-4 rounded-outer p-5 scroll-mt-4" aria-live="polite">
+      <h2 className="font-mono text-xs font-medium uppercase tracking-[0.08em] text-accent">Answer from {where}</h2>
       {error ? (
-        <p className="mt-3 text-sm text-red-300">{error}</p>
+        <p className="mt-3 text-sm text-danger">{error}</p>
       ) : !data ? (
         <div className="mt-3 space-y-2">
           <div className="shimmer h-4 w-3/4 rounded" />
           <div className="shimmer h-4 w-1/2 rounded" />
         </div>
       ) : !data.answer ? (
-        <p className="mt-3 text-sm text-zinc-400">Couldn't find an answer in {where}. Try other words, or check the matches below.</p>
+        <p className="mt-3 text-sm text-ink-muted">Couldn't find an answer in {where}. Try other words, or check the matches below.</p>
       ) : (
         <>
-          <p className="mt-3 leading-relaxed text-white">{data.answer}</p>
+          <p className="mt-3 leading-relaxed text-ink-primary">{data.answer}</p>
           <ul className="mt-4 space-y-1.5">
             {data.sources.map((s) => {
               const label = (
                 <>
-                  <span className="w-12 shrink-0 font-mono text-xs text-amber-300">{clock(s.from_ms / 1000)}</span>
+                  <span className="w-12 shrink-0 font-mono text-xs text-accent">{clock(s.from_ms / 1000)}</span>
                   <span className="min-w-0">
-                    {s.kind === 'screen' && <span className="mr-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-200">On screen</span>}
-                    {!videoId && <span className="mr-2 text-xs text-zinc-500">{s.title}</span>}
-                    <span className="text-zinc-300">{snippet(s.text, q.toLowerCase().split(/\s+/).filter(Boolean))}</span>
+                    {s.kind === 'screen' && <span className="mr-2 rounded bg-subtle px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-primary">On screen</span>}
+                    {!videoId && <span className="mr-2 text-xs text-ink-muted">{s.title}</span>}
+                    <span className="text-ink-primary">{snippet(s.text, q.toLowerCase().split(/\s+/).filter(Boolean))}</span>
                   </span>
                 </>
               )
-              const cls = 'flex w-full gap-3 rounded-xl px-2 py-1.5 text-left text-sm transition-colors hover:bg-white/5'
+              const cls = 'flex w-full gap-3 rounded-outer px-2 py-1.5 text-left text-sm transition-colors hover:bg-subtle'
               return (
                 <li key={s.video_id + s.from_ms}>
                   {onSeek ? (
@@ -75,7 +75,7 @@ export default function AskCard({ q, videoId, onSeek }: { q: string; videoId?: s
               )
             })}
           </ul>
-          {data.truncated && <p className="mt-3 text-xs text-zinc-500">Only part of the transcript fit in the question, so the answer may miss something.</p>}
+          {data.truncated && <p className="mt-3 text-xs text-ink-muted">Only part of the transcript fit in the question, so the answer may miss something.</p>}
         </>
       )}
     </motion.section>

@@ -18,7 +18,7 @@ export default function ClipControls({
 }) {
   return (
     <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 rounded-b-2xl bg-gradient-to-t from-scrim/80 to-transparent px-4 pb-3 pt-8 text-sm text-on-scrim">
-      <button onClick={onToggle} aria-label={playing ? 'Pause clip' : 'Play clip'} className="grid h-8 w-8 pointer-coarse:size-11 shrink-0 place-items-center rounded-full hover:bg-on-scrim/10">
+      <button onClick={onToggle} aria-label={playing ? 'Pause clip' : 'Play clip'} className="grid h-8 w-8 pointer-coarse:size-11 shrink-0 place-items-center rounded-outer hover:bg-on-scrim/10">
         <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden>
           {playing ? <path d="M7 5h3v14H7zM14 5h3v14h-3z" /> : <path d="M8 5.5v13l10-6.5z" />}
         </svg>
@@ -31,7 +31,7 @@ export default function ClipControls({
         value={position}
         onChange={(e) => onSeek(Number(e.target.value))}
         aria-label="Clip position"
-        className="h-1 min-w-0 flex-1 cursor-pointer accent-amber-400"
+        className="h-1 min-w-0 flex-1 cursor-pointer accent-accent"
       />
       <span className="shrink-0 tabular-nums text-on-scrim">
         {clock(position)} / {clock(length)}
@@ -39,7 +39,7 @@ export default function ClipControls({
       <button
         onClick={() => (document.fullscreenElement ? document.exitFullscreen() : fullscreenTarget.current?.requestFullscreen())}
         aria-label="Full screen"
-        className="grid h-8 w-8 pointer-coarse:size-11 shrink-0 place-items-center rounded-full hover:bg-on-scrim/10"
+        className="grid h-8 w-8 pointer-coarse:size-11 shrink-0 place-items-center rounded-outer hover:bg-on-scrim/10"
       >
         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
           <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />

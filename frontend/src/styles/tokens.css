@@ -1,0 +1,233 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+:root {
+  --danger: oklch(0.68 0.2 25);
+  --scrim: oklch(0 0 0);
+  --on-scrim: oklch(0.985 0 0);
+  --brand-linkedin: #0A66C2;
+  --radius-outer: 8px;
+  --card-padding: 20px;
+  --radius-inner: calc(var(--radius-outer) - 4px);
+  --font-display: 'Plus Jakarta Sans', sans-serif;
+  --font-ui: 'Geist', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --text-hero: clamp(2.5rem, 5vw, 4.5rem);
+  --tracking-display: -0.03em;
+  --measure-body: 65ch;
+  --surface-blur: none;
+  --surface-shadow: none;
+  --border-width: 1px;
+  --ease-preset: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-preset: 180ms;
+}
+
+:root,
+[data-theme="instrument"] {
+  --duration-theme: 200ms;
+  --ease-theme: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: dark;
+  --bg-canvas: oklch(0.13 0.01 260);
+  --bg-surface: oklch(0.17 0.012 260);
+  --bg-subtle: oklch(0.21 0.015 260);
+  --border-subtle: oklch(1 0 0 / 0.08);
+  --border-strong: oklch(1 0 0 / 0.16);
+  --ink-primary: oklch(0.96 0.005 260);
+  --ink-muted: oklch(0.65 0.015 260);
+  --accent: oklch(0.78 0.16 70);
+  --accent-alt: oklch(0.72 0.19 155);
+  --accent-ink: oklch(0.13 0.01 260);
+  --font-display: 'Geist', 'Plus Jakarta Sans', sans-serif;
+  --font-ui: 'Geist', 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --radius-outer: 8px;
+  --tracking-display: -0.025em;
+  --border-width: 1px;
+  --ease-preset: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-preset: 180ms;
+}
+
+[data-theme="editorial"] {
+  --duration-theme: 200ms;
+  --ease-theme: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: light;
+  --bg-canvas: oklch(0.96 0.012 85);
+  --bg-surface: oklch(0.93 0.015 80);
+  --bg-subtle: oklch(0.89 0.018 78);
+  --border-subtle: oklch(0.22 0.015 60 / 0.12);
+  --border-strong: oklch(0.22 0.015 60 / 0.28);
+  --ink-primary: oklch(0.20 0.018 55);
+  --ink-muted: oklch(0.46 0.018 60);
+  --accent: oklch(0.54 0.16 32);
+  --accent-alt: oklch(0.42 0.09 150);
+  --accent-ink: oklch(0.97 0.01 85);
+  --font-display: 'Instrument Serif', 'Newsreader', Georgia, serif;
+  --font-ui: 'Satoshi', 'DM Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  --radius-outer: 4px;
+  --tracking-display: -0.02em;
+  --border-width: 1px;
+  --ease-preset: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-preset: 450ms;
+}
+
+[data-theme="swiss"] {
+  --duration-theme: 200ms;
+  --ease-theme: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: light;
+  --bg-canvas: oklch(0.985 0.002 240);
+  --bg-surface: oklch(1 0 0);
+  --bg-subtle: oklch(0.95 0.004 240);
+  --border-subtle: oklch(0.18 0.01 240 / 0.10);
+  --border-strong: oklch(0.18 0.01 240 / 0.25);
+  --ink-primary: oklch(0.16 0.01 240);
+  --ink-muted: oklch(0.48 0.012 240);
+  --accent: oklch(0.58 0.22 27);
+  --accent-alt: oklch(0.52 0.20 260);
+  --accent-ink: oklch(0.99 0 0);
+  --font-display: 'Space Grotesk', 'Archivo', sans-serif;
+  --font-ui: 'Plus Jakarta Sans', 'Switzer', sans-serif;
+  --font-mono: 'Geist Mono', monospace;
+  --radius-outer: 2px;
+  --tracking-display: -0.035em;
+  --border-width: 1px;
+  --ease-preset: cubic-bezier(0.2, 0, 0, 1);
+  --duration-preset: 150ms;
+}
+
+[data-theme="spatial-dark"] {
+  --duration-theme: 200ms;
+  --ease-theme: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: dark;
+  --bg-canvas: oklch(0.11 0.015 265);
+  --bg-surface: oklch(0.20 0.02 265 / 0.55);
+  --bg-subtle: oklch(1 0 0 / 0.06);
+  --border-subtle: oklch(1 0 0 / 0.14);
+  --border-strong: oklch(1 0 0 / 0.28);
+  --ink-primary: oklch(0.98 0.003 260);
+  --ink-muted: oklch(0.70 0.015 260);
+  --accent: oklch(0.66 0.21 255);
+  --accent-alt: oklch(0.64 0.16 205);
+  --accent-ink: oklch(0.98 0.003 260);
+  --font-display: 'SF Pro Display', 'Plus Jakarta Sans', sans-serif;
+  --font-ui: 'Geist', sans-serif;
+  --font-mono: 'Geist Mono', monospace;
+  --radius-outer: 20px;
+  --tracking-display: -0.03em;
+  --surface-blur: blur(22px) saturate(165%);
+  --surface-shadow: inset 0 1px 0 0 oklch(1 0 0 / 0.18);
+  --border-width: 1px;
+  --ease-preset: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-preset: 280ms;
+}
+
+[data-theme="spatial-light"] {
+  --duration-theme: 200ms;
+  --ease-theme: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: light;
+  --bg-canvas: oklch(0.97 0.005 250);
+  --bg-surface: oklch(1 0 0 / 0.65);
+  --bg-subtle: oklch(0.95 0.006 250 / 0.75);
+  --border-subtle: oklch(0.20 0.02 250 / 0.10);
+  --border-strong: oklch(0.20 0.02 250 / 0.22);
+  --ink-primary: oklch(0.16 0.015 255);
+  --ink-muted: oklch(0.46 0.015 255);
+  --accent: oklch(0.64 0.16 205);
+  --accent-alt: oklch(0.56 0.21 255);
+  --accent-ink: oklch(0.99 0 0);
+  --font-display: 'SF Pro Display', 'Plus Jakarta Sans', sans-serif;
+  --font-ui: 'Geist', sans-serif;
+  --font-mono: 'Geist Mono', monospace;
+  --radius-outer: 20px;
+  --tracking-display: -0.03em;
+  --surface-blur: blur(22px) saturate(165%);
+  --surface-shadow: inset 0 1px 0 0 oklch(1 0 0 / 0.85);
+  --border-width: 1px;
+  --ease-preset: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-preset: 280ms;
+}
+
+[data-theme="tactile"] {
+  --duration-theme: 200ms;
+  --ease-theme: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: light;
+  --bg-canvas: oklch(0.985 0.006 95);
+  --bg-surface: oklch(1 0 0);
+  --bg-subtle: oklch(0.94 0.012 95);
+  --border-subtle: oklch(0.25 0.02 80 / 0.16);
+  --border-strong: oklch(0.25 0.02 80 / 0.30);
+  --ink-primary: oklch(0.22 0.02 70);
+  --ink-muted: oklch(0.50 0.02 75);
+  --accent: oklch(0.68 0.20 145);
+  --accent-alt: oklch(0.68 0.21 38);
+  --accent-ink: oklch(0.99 0 0);
+  --font-display: 'Fraunces', 'Outfit', sans-serif;
+  --font-ui: 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --radius-outer: 14px;
+  --tracking-display: -0.02em;
+  --surface-shadow: 0 3px 0 0 var(--border-subtle);
+  --border-width: 2px;
+  --ease-preset: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-preset: 140ms;
+}
+
+[data-theme="brutalist"] {
+  --duration-theme: 200ms;
+  --ease-theme: cubic-bezier(0.22, 1, 0.36, 1);
+  color-scheme: light;
+  --bg-canvas: oklch(0.94 0.02 92);
+  --bg-surface: oklch(0.98 0.01 92);
+  --bg-subtle: oklch(0.88 0.03 90);
+  --border-subtle: oklch(0.15 0.01 240);
+  --border-strong: oklch(0.15 0.01 240);
+  --ink-primary: oklch(0.15 0.01 240);
+  --ink-muted: oklch(0.42 0.015 240);
+  --accent: oklch(0.62 0.25 25);
+  --accent-alt: oklch(0.84 0.19 95);
+  --accent-ink: oklch(0.99 0 0);
+  --font-display: 'Syne', 'Space Grotesk', sans-serif;
+  --font-ui: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'Space Mono', 'IBM Plex Mono', monospace;
+  --radius-outer: 0px;
+  --tracking-display: -0.03em;
+  --surface-shadow: 3px 3px 0 0 var(--border-strong);
+  --border-width: 1.5px;
+  --ease-preset: steps(2);
+  --duration-preset: 90ms;
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--ink-primary);
+  font-family: var(--font-ui);
+  line-height: 1.6;
+  text-wrap: pretty;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .display-heading {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-display);
+  text-wrap: balance;
+  line-height: 1.1;
+}
+
+code, pre, .mono, .tabular-metric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.preset-transition {
+  transition-property: transform, opacity;
+  transition-duration: var(--duration-preset);
+  transition-timing-function: var(--ease-preset);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

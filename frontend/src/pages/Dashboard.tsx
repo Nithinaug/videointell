@@ -30,40 +30,42 @@ export default function Dashboard() {
 
   return (
     <Shell>
-      <h1 className="font-display title-xl mb-10 text-white">Videos</h1>
+      <header className="mb-10 border-b border-border-subtle pb-6">
+        <p className="mb-3 font-mono text-xs uppercase tracking-[0.08em] text-ink-muted">Library · <span className="tabular-nums text-ink-primary">{videos ? String(videos.length).padStart(2, '0') : '--'}</span></p>
+        <h1 className="font-display title-xl text-ink-primary">Videos</h1>
+      </header>
 
       {blocked ? (
-        <div className="glass rounded-3xl px-6 py-16 text-center">
-          <p className="font-medium text-white">{blocked}</p>
-          <p className="mt-2 text-sm text-zinc-400">This is a small public preview with a limited number of accounts. Please try again later.</p>
+        <div className="glass rounded-outer px-6 py-16 text-center">
+          <p className="font-medium text-ink-primary">{blocked}</p>
+          <p className="mt-2 text-sm text-ink-muted">This is a small public preview with a limited number of accounts. Please try again later.</p>
         </div>
       ) : videos === null ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="shimmer aspect-[4/3] rounded-3xl" />
+            <div key={i} className="shimmer aspect-[4/3] rounded-outer" />
           ))}
         </div>
       ) : videos.length === 0 ? (
-        <div className="glass rounded-3xl px-6 py-20 text-center">
-          <p className="text-zinc-400">No videos yet.</p>
-          <Link to="/upload" className="btn-glow mt-5 inline-block rounded-xl px-5 py-2.5 text-sm font-semibold text-white">
+        <div className="glass rounded-outer px-6 py-20 text-center">
+          <p className="text-ink-muted">No videos yet.</p>
+          <Link to="/upload" className="btn-glow mt-5 inline-block rounded-outer px-5 py-2.5 text-sm font-semibold">
             Upload
           </Link>
         </div>
       ) : (
         <motion.div
-          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 [grid-auto-flow:dense]"
+          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
           initial="hidden"
           animate="show"
           variants={{ show: { transition: { staggerChildren: 0.05 } } }}
         >
-          {videos.map((v, i) => (
+          {videos.map((v) => (
             <motion.div
               key={v.id}
-              className={i === 0 ? 'sm:col-span-2 sm:row-span-2' : ''}
               variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
             >
-              <VideoCard video={v} big={i === 0} onDeleted={() => setVideos((all) => all?.filter((x) => x.id !== v.id) ?? null)} />
+              <VideoCard video={v} onDeleted={() => setVideos((all) => all?.filter((x) => x.id !== v.id) ?? null)} />
             </motion.div>
           ))}
         </motion.div>

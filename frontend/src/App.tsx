@@ -15,7 +15,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!token) startLogin()
   }, [token])
-  if (!token) return <div className="min-h-screen flex items-center justify-center bg-page text-zinc-400">Redirecting to sign in...</div>
+  if (!token) return <div className="min-h-screen flex items-center justify-center bg-canvas text-ink-muted">Redirecting to sign in...</div>
   return <>{children}</>
 }
 

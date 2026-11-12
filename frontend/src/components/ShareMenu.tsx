@@ -13,14 +13,14 @@ const linkedinPath =
 const targets: Target[] = [
   { name: 'WhatsApp', path: siWhatsapp.path, color: `#${siWhatsapp.hex}`, href: (u, t) => `https://wa.me/?text=${encodeURIComponent(`${t} ${u}`)}` },
   { name: 'Gmail', path: siGmail.path, color: `#${siGmail.hex}`, href: (u, t) => `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(t)}&body=${encodeURIComponent(u)}` },
-  { name: 'X', path: siX.path, color: '#ffffff', href: (u, t) => `https://twitter.com/intent/tweet?text=${encodeURIComponent(t)}&url=${encodeURIComponent(u)}` },
-  { name: 'LinkedIn', path: linkedinPath, color: '#0A66C2', href: (u) => `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(u)}` },
+  { name: 'X', path: siX.path, color: 'var(--ink-primary)', href: (u, t) => `https://twitter.com/intent/tweet?text=${encodeURIComponent(t)}&url=${encodeURIComponent(u)}` },
+  { name: 'LinkedIn', path: linkedinPath, color: 'var(--brand-linkedin)', href: (u) => `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(u)}` },
   { name: 'Telegram', path: siTelegram.path, color: `#${siTelegram.hex}`, href: (u, t) => `https://t.me/share/url?url=${encodeURIComponent(u)}&text=${encodeURIComponent(t)}` },
 ]
 
 function BrandIcon({ path, color }: { path: string; color: string }) {
   return (
-    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/[0.06]">
+    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-inner bg-subtle">
       <svg viewBox="0 0 24 24" aria-hidden className="h-4 w-4" fill={color}>
         <path d={path} />
       </svg>
@@ -98,7 +98,7 @@ export default function ShareMenu({ videoId, title, hd, resultsUrl }: { videoId:
     navigator.share({ title, url }).catch(() => {})
   }
 
-  const item = 'flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5 disabled:opacity-40 disabled:hover:bg-transparent'
+  const item = 'flex w-full items-center gap-3 rounded-inner px-2.5 py-2 text-left text-sm text-ink-primary transition-colors hover:bg-subtle disabled:opacity-40 disabled:hover:bg-transparent'
 
   return (
     <div ref={root} className="relative ml-auto">
@@ -108,7 +108,7 @@ export default function ShareMenu({ videoId, title, hd, resultsUrl }: { videoId:
         aria-haspopup="menu"
         aria-expanded={open}
         title="Share"
-        className="grid h-9 w-9 pointer-coarse:size-11 place-items-center rounded-full text-zinc-300 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-white"
+        className="grid h-9 w-9 pointer-coarse:size-11 place-items-center rounded-outer text-ink-primary ring-1 ring-border-subtle transition-colors hover:bg-subtle hover:text-ink-primary"
       >
         <ShareIcon />
       </button>
@@ -122,13 +122,13 @@ export default function ShareMenu({ videoId, title, hd, resultsUrl }: { videoId:
             exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: -6 }}
             transition={{ type: 'spring', stiffness: 520, damping: 34 }}
             style={{ transformOrigin: 'top right' }}
-            className="absolute right-0 top-full z-30 mt-2 w-60 rounded-2xl bg-zinc-900/95 p-1.5 shadow-2xl ring-1 ring-white/10 backdrop-blur"
+            className="absolute right-0 top-full z-30 mt-2 w-60 rounded-outer bg-surface p-1.5 shadow-surface ring-1 ring-border-subtle backdrop-blur"
           >
-            {error && <p className="px-2.5 py-2 text-xs text-red-300">Could not create the link. Close and try again.</p>}
-            {!error && !url && <p role="status" className="px-2.5 py-2 text-xs text-zinc-400">Making a 7-day link</p>}
+            {error && <p className="px-2.5 py-2 text-xs text-danger">Could not create the link. Close and try again.</p>}
+            {!error && !url && <p role="status" className="px-2.5 py-2 text-xs text-ink-muted">Making a 7-day link</p>}
             {canNativeShare && (
               <button role="menuitem" disabled={!url} onClick={nativeShare} className={item}>
-                <span className="grid h-7 w-7 place-items-center rounded-full bg-amber-400/20 text-amber-300">
+                <span className="grid h-7 w-7 place-items-center rounded-inner bg-accent/20 text-accent">
                   <ShareIcon className="h-3.5 w-3.5" />
                 </span>
                 Share with an app
@@ -159,7 +159,7 @@ export default function ShareMenu({ videoId, title, hd, resultsUrl }: { videoId:
               </button>
             )}
             <button role="menuitem" disabled={!url} onClick={copy} className={item}>
-              <span className="grid h-7 w-7 place-items-center rounded-full bg-white/10 text-zinc-300">
+              <span className="grid h-7 w-7 place-items-center rounded-inner bg-subtle text-ink-primary">
                 {copied ? <CheckIcon className="h-3.5 w-3.5" /> : <ShareIcon className="h-3.5 w-3.5" />}
               </span>
               {copied ? 'Link copied' : 'Copy link'}

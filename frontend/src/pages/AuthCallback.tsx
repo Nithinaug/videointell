@@ -21,11 +21,11 @@ export default function AuthCallback() {
   }, [signIn, navigate])
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#07090c] text-zinc-400">
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-canvas text-ink-muted">
       {error ? (
         <>
-          <p className="text-red-300">{error}</p>
-          <button onClick={startLogin} className="px-4 py-2 rounded-xl bg-white text-zinc-900 font-medium">
+          <p className="text-danger">{error}</p>
+          <button onClick={startLogin} className="px-4 py-2 rounded-outer bg-accent text-accent-ink font-medium">
             Sign in again
           </button>
         </>

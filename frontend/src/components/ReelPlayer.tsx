@@ -60,7 +60,7 @@ export default function ReelPlayer({ hits, onClose }: { hits: SearchHit[]; onClo
   const mark = marks?.[index]
 
   return (
-    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass mb-6 space-y-3 rounded-2xl p-3" aria-label="Highlight reel">
+    <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass mb-6 space-y-3 rounded-outer p-3" aria-label="Highlight reel">
       <video
         ref={ref}
         controls
@@ -70,24 +70,24 @@ export default function ReelPlayer({ hits, onClose }: { hits: SearchHit[]; onClo
           const t = e.currentTarget.currentTime
           setIndex(marks.reduce((cur, m, i) => (m.start <= t ? i : cur), 0))
         }}
-        className="w-full aspect-video rounded-xl bg-black object-contain"
+        className="w-full aspect-video rounded-outer bg-canvas object-contain"
       />
       <div className="flex items-center gap-2 px-1 text-sm">
-        <button onClick={() => jump(index - 1)} disabled={!marks || index === 0} aria-label="Previous moment" className="rounded-lg px-2 py-1 text-zinc-300 ring-1 ring-white/10 hover:bg-white/5 disabled:opacity-30">
+        <button onClick={() => jump(index - 1)} disabled={!marks || index === 0} aria-label="Previous moment" className="rounded-inner px-2 py-1 text-ink-primary ring-1 ring-border-subtle hover:bg-subtle disabled:opacity-30">
           &larr;
         </button>
-        <button onClick={() => jump(index + 1)} disabled={!marks || index >= marks.length - 1} aria-label="Next moment" className="rounded-lg px-2 py-1 text-zinc-300 ring-1 ring-white/10 hover:bg-white/5 disabled:opacity-30">
+        <button onClick={() => jump(index + 1)} disabled={!marks || index >= marks.length - 1} aria-label="Next moment" className="rounded-inner px-2 py-1 text-ink-primary ring-1 ring-border-subtle hover:bg-subtle disabled:opacity-30">
           &rarr;
         </button>
-        <p className="min-w-0 flex-1 truncate text-zinc-400" aria-live="polite">
+        <p className="min-w-0 flex-1 truncate text-ink-muted" aria-live="polite">
           {error ??
             (mark ? (
               <>
-                <span className="tabular-nums text-zinc-200">
+                <span className="tabular-nums text-ink-primary">
                   Moment {index + 1} of {marks!.length}
                 </span>
                 {' · '}
-                <Link to={`/videos/${mark.videoId}?t=${Math.floor(mark.at)}`} className="text-amber-300 hover:text-amber-200">
+                <Link to={`/videos/${mark.videoId}?t=${Math.floor(mark.at)}`} className="text-accent hover:text-accent">
                   {mark.title} at {clock(mark.at)}
                 </Link>
               </>
@@ -95,7 +95,7 @@ export default function ReelPlayer({ hits, onClose }: { hits: SearchHit[]; onClo
               'Building the reel...'
             ))}
         </p>
-        <button onClick={onClose} aria-label="Close reel" className="rounded-lg px-2 py-1 text-zinc-400 hover:bg-white/5 hover:text-white">
+        <button onClick={onClose} aria-label="Close reel" className="rounded-inner px-2 py-1 text-ink-muted hover:bg-subtle hover:text-ink-primary">
           Close
         </button>
       </div>

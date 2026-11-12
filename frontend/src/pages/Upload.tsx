@@ -9,26 +9,20 @@ function Ring({ value }: { value: number }) {
   const c = 2 * Math.PI * r
   return (
     <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90" aria-hidden>
-      <circle cx="32" cy="32" r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="5" />
+      <circle cx="32" cy="32" r={r} fill="none" stroke="var(--border-subtle)" strokeWidth="5" />
       <motion.circle
         cx="32"
         cy="32"
         r={r}
         fill="none"
-        stroke="url(#ring)"
+        stroke="var(--accent)"
         strokeWidth="5"
         strokeLinecap="round"
         strokeDasharray={c}
         animate={{ strokeDashoffset: c * (1 - value) }}
         transition={{ type: 'spring', stiffness: 80, damping: 20 }}
       />
-      <defs>
-        <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" style={{ stopColor: 'var(--color-accent)' }} />
-          <stop offset="100%" style={{ stopColor: 'var(--color-accent-deep)' }} />
-        </linearGradient>
-      </defs>
-    </svg>
+      </svg>
   )
 }
 
@@ -86,9 +80,10 @@ export default function Upload() {
   return (
     <Shell>
       <div className="mx-auto max-w-2xl">
-        <h1 className="font-display title-xl text-white">Upload</h1>
+        <p className="mb-2 font-mono text-xs uppercase tracking-[0.08em] text-ink-muted">New upload</p>
+        <h1 className="font-display title-xl text-ink-primary">Upload</h1>
 
-        <form onSubmit={onSubmit} className="glass mt-6 space-y-5 rounded-3xl p-6">
+        <form onSubmit={onSubmit} className="glass mt-6 space-y-5 rounded-outer p-6">
           <button
             type="button"
             disabled={busy}
@@ -99,51 +94,51 @@ export default function Upload() {
             }}
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
-            className={`relative grid w-full min-h-56 place-items-center overflow-hidden rounded-2xl border-2 border-dashed p-6 text-center transition-colors ${
-              dragging ? 'border-amber-400 bg-amber-400/10' : 'border-white/15 hover:border-white/30 hover:bg-white/[0.03]'
+            className={`relative grid w-full min-h-56 place-items-center overflow-hidden rounded-outer border-2 border-dashed p-6 text-center transition-colors ${
+              dragging ? 'border-accent bg-accent/10' : 'border-border-subtle hover:border-border-strong hover:bg-subtle'
             }`}
           >
             <input ref={input} type="file" accept="video/*" hidden onChange={(e) => pick(e.target.files?.[0])} />
             <AnimatePresence mode="wait">
               {done ? (
                 <motion.div key="done" initial={{ scale: 0.4, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: 'spring', stiffness: 400, damping: 15 }} className="flex flex-col items-center gap-2">
-                  <span className="grid h-16 w-16 place-items-center rounded-full bg-amber-400/15 text-3xl text-amber-300 ring-1 ring-amber-400/30">&#10003;</span>
-                  <span className="font-medium text-amber-200">Uploaded</span>
+                  <span className="grid h-16 w-16 place-items-center rounded-outer bg-accent/15 text-3xl text-accent ring-1 ring-accent/30">&#10003;</span>
+                  <span className="font-medium text-accent">Uploaded</span>
                 </motion.div>
               ) : busy ? (
                 <motion.div key="busy" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-3">
                   {(progress ?? 0) < 1 ? (
                     <div className="relative">
                       <Ring value={progress ?? 0} />
-                      <span className="absolute inset-0 grid place-items-center text-xs font-semibold text-white">{Math.round((progress ?? 0) * 100)}%</span>
+                      <span className="absolute inset-0 grid place-items-center text-xs font-semibold text-ink-primary">{Math.round((progress ?? 0) * 100)}%</span>
                     </div>
                   ) : (
                     <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.1, ease: 'linear' }}>
                       <Ring value={0.25} />
                     </motion.div>
                   )}
-                  <span className="text-sm text-zinc-300">{(progress ?? 0) < 1 ? `Uploading ${file?.name}` : 'Saving...'}</span>
+                  <span className="text-sm text-ink-primary">{(progress ?? 0) < 1 ? `Uploading ${file?.name}` : 'Saving...'}</span>
                 </motion.div>
               ) : file ? (
                 <motion.div key="file" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center gap-1">
                   <span className="text-4xl" aria-hidden>&#127902;</span>
-                  <span className="font-medium text-white break-all">{file.name}</span>
-                  <span className="text-xs text-zinc-400">{size(file.size)}</span>
+                  <span className="font-medium text-ink-primary break-all">{file.name}</span>
+                  <span className="font-mono text-xs tabular-nums text-ink-muted">{size(file.size)}</span>
                 </motion.div>
               ) : (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center gap-2">
-                  <motion.span animate={dragging ? { y: -6, scale: 1.1 } : { y: 0, scale: 1 }} className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-amber-500/30 to-amber-400/30 text-2xl text-white ring-1 ring-white/15">
+                  <motion.span animate={dragging ? { y: -6, scale: 1.1 } : { y: 0, scale: 1 }} className="grid h-14 w-14 place-items-center rounded-outer bg-accent/20 text-2xl text-ink-primary ring-1 ring-border-subtle">
                     &#8593;
                   </motion.span>
-                  <span className="font-medium text-white">{dragging ? 'Drop it' : 'Drag a video here'}</span>
-                  <span className="text-xs text-zinc-400">or click to choose</span>
+                  <span className="font-medium text-ink-primary">{dragging ? 'Drop it' : 'Drag a video here'}</span>
+                  <span className="text-xs text-ink-muted">or click to choose</span>
                 </motion.div>
               )}
             </AnimatePresence>
           </button>
 
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.15em] text-zinc-400">Title</span>
+            <span className="font-mono text-xs font-medium uppercase tracking-[0.08em] text-ink-muted">Title</span>
             <input
               type="text"
               value={title}
@@ -151,13 +146,13 @@ export default function Upload() {
               placeholder="Team meeting"
               maxLength={200}
               disabled={busy}
-              className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-amber-400/60"
+              className="mt-2 w-full rounded-outer border border-border-subtle bg-subtle px-4 py-3 text-ink-primary outline-none transition-colors placeholder:text-ink-muted focus:border-accent/60"
             />
           </label>
 
-          {error && <p className="text-sm text-red-300">{error}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
 
-          <button type="submit" disabled={!file || busy} className="btn-glow w-full rounded-xl py-3.5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="submit" disabled={!file || busy} className="btn-glow w-full rounded-outer py-3.5 font-semibold disabled:cursor-not-allowed disabled:opacity-50">
             {busy ? 'Uploading...' : 'Upload'}
           </button>
         </form>

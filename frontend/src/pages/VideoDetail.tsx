@@ -51,8 +51,8 @@ export function ChapterStrip({
             ref={i === active ? activeRef : undefined}
             aria-current={i === active}
             onClick={() => onSeek(starts[i])}
-            className={`group snap-start shrink-0 w-44 text-left rounded-xl overflow-hidden ring-1 transition duration-200 ${
-              i === active ? 'ring-2 ring-amber-400 bg-white/[0.04]' : 'ring-white/10 bg-white/[0.02] hover:ring-white/25'
+            className={`group snap-start shrink-0 w-44 text-left rounded-outer overflow-hidden ring-1 transition duration-200 ${
+              i === active ? 'ring-2 ring-accent bg-subtle' : 'ring-border-subtle bg-subtle hover:ring-border-strong'
             }`}
           >
             <div className="relative aspect-video bg-scrim">
@@ -67,11 +67,11 @@ export function ChapterStrip({
               <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-scrim/70 font-mono text-[10px] text-on-scrim">
                 {c.start}
               </span>
-              <div className="absolute inset-x-0 bottom-0 h-0.5 bg-white/10">
-                <div className="h-full bg-amber-400 transition-[width] duration-300" style={{ width: `${progress * 100}%` }} />
+              <div className="absolute inset-x-0 bottom-0 h-0.5 bg-subtle">
+                <div className="h-full w-full origin-left bg-accent transition-transform duration-300" style={{ transform: `scaleX(${progress})` }} />
               </div>
             </div>
-            <p className={`px-3 py-2 text-sm truncate ${i === active ? 'text-white' : 'text-zinc-400'}`}>{c.title}</p>
+            <p className={`px-3 py-2 text-sm truncate ${i === active ? 'text-ink-primary' : 'text-ink-muted'}`}>{c.title}</p>
           </button>
         )
       })}
@@ -84,7 +84,7 @@ function Skeleton() {
     <div aria-busy="true" aria-label="Processing video" className="flex gap-3 overflow-hidden">
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className="shrink-0 w-44 space-y-2">
-          <div className="shimmer aspect-video rounded-xl" />
+          <div className="shimmer aspect-video rounded-outer" />
           <div className="shimmer h-3 w-3/4 rounded" />
         </div>
       ))}
@@ -116,21 +116,21 @@ export function Transcript({ segments, screen, time, onSeek, filter }: { segment
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {filtering && (
-        <p className="mb-2 text-xs text-zinc-500">
+        <p className="mb-2 text-xs text-ink-muted">
           {shown.length + onScreen.length} {shown.length + onScreen.length === 1 ? 'match' : 'matches'} for &ldquo;{filter.trim()}&rdquo;
         </p>
       )}
       {onScreen.length > 0 && (
-        <div className="-mx-2 mb-2 border-b border-white/5 pb-2">
+        <div className="-mx-2 mb-2 border-b border-border-subtle pb-2">
           {onScreen.map((s) => (
             <button
               key={'screen' + s.from_ms}
               onClick={() => onSeek(s.from_ms / 1000)}
-              className="flex w-full gap-3 rounded-xl px-2 py-1.5 pointer-coarse:py-3 text-left text-sm text-zinc-300 transition-colors hover:bg-white/5"
+              className="flex w-full gap-3 rounded-outer px-2 py-1.5 pointer-coarse:py-3 text-left text-sm text-ink-primary transition-colors hover:bg-subtle"
             >
-              <span className="w-12 shrink-0 pt-0.5 font-mono text-xs text-zinc-500">{clock(s.from_ms / 1000)}</span>
+              <span className="w-12 shrink-0 pt-0.5 font-mono text-xs text-ink-muted">{clock(s.from_ms / 1000)}</span>
               <span className="min-w-0">
-                <span className="mr-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-200">On screen</span>
+                <span className="mr-2 rounded bg-subtle px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ink-primary">On screen</span>
                 <span>{snippet(s.text, terms)}</span>
               </span>
             </button>
@@ -138,9 +138,9 @@ export function Transcript({ segments, screen, time, onSeek, filter }: { segment
         </div>
       )}
       {filtering && shown.length === 0 && onScreen.length === 0 && (
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-ink-muted">
           Nobody says or shows that in this video.{' '}
-          <Link to={`/search?q=${encodeURIComponent(filter.trim())}`} className="text-amber-400 hover:text-amber-300">
+          <Link to={`/search?q=${encodeURIComponent(filter.trim())}`} className="text-accent hover:text-accent">
             Search all videos instead
           </Link>
         </p>
@@ -152,11 +152,11 @@ export function Transcript({ segments, screen, time, onSeek, filter }: { segment
             ref={i === active ? activeRef : undefined}
             aria-current={i === active}
             onClick={() => onSeek(s.from_ms / 1000)}
-            className={`flex w-full gap-3 rounded-lg px-2 py-1.5 pointer-coarse:py-3 text-left text-sm leading-relaxed transition-colors duration-200 ${
-              i === active ? 'bg-white/[0.07] text-white' : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+            className={`flex w-full gap-3 rounded-inner px-2 py-1.5 pointer-coarse:py-3 text-left text-sm leading-relaxed transition-colors duration-200 ${
+              i === active ? 'bg-subtle text-ink-primary' : 'text-ink-muted hover:bg-subtle hover:text-ink-primary'
             }`}
           >
-            <span className={`w-10 shrink-0 pt-0.5 font-mono text-xs ${i === active ? 'text-amber-300' : 'text-zinc-600'}`}>{clock(s.from_ms / 1000)}</span>
+            <span className={`w-10 shrink-0 pt-0.5 font-mono text-xs ${i === active ? 'text-accent' : 'text-ink-muted'}`}>{clock(s.from_ms / 1000)}</span>
             <span>{s.text}</span>
           </button>
         ))}
@@ -366,15 +366,15 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
       <div className="min-w-0 space-y-4">
       <motion.div ref={box} layoutId={`media-${detail.video.id}`} className="group relative">
         {!base ? (
-          <div role="status" className="relative grid w-full aspect-video place-items-center rounded-2xl bg-black ring-1 ring-white/10">
+          <div role="status" className="relative grid w-full aspect-video place-items-center rounded-outer bg-canvas ring-1 ring-border-subtle">
             <div className="flex flex-col items-center gap-3">
               <motion.span
                 aria-hidden
-                className="h-10 w-10 rounded-full border-2 border-white/10 border-t-amber-400"
+                className="h-10 w-10 rounded-full border-2 border-border-subtle border-t-accent"
                 animate={{ rotate: 360 }}
                 transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}
               />
-              <span className="text-sm text-zinc-400">
+              <span className="text-sm text-ink-muted">
                 Processing...{percent !== null && <CountUp value={percent} />}
               </span>
             </div>
@@ -404,7 +404,7 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
               e.currentTarget.play().catch(() => {})
             }
           }}
-          className="relative w-full aspect-video object-contain rounded-2xl bg-black ring-1 ring-white/10"
+          className="relative w-full aspect-video object-contain rounded-outer bg-canvas ring-1 ring-border-subtle"
         >
           <track kind="captions" srcLang="en" label="English" src={base + 'transcript.vtt'} />
         </video>
@@ -418,15 +418,15 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
         )}
       </div>
 
-      <aside className="glass flex max-h-[75vh] min-h-[24rem] flex-col overflow-hidden rounded-2xl lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]">
-        <div role="tablist" aria-label="Video details" className="flex shrink-0 gap-1 border-b border-white/5 p-1.5">
+      <aside className="glass flex max-h-[75vh] min-h-[24rem] flex-col overflow-hidden rounded-outer lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]">
+        <div role="tablist" aria-label="Video details" className="flex shrink-0 gap-1 border-b border-border-subtle p-1.5">
           {(['transcript', 'clips', 'summary'] as const).map((t) => (
             <button
               key={t}
               role="tab"
               aria-selected={tab === t}
               onClick={() => setTab(t)}
-              className={`flex-1 rounded-lg px-3 py-1.5 pointer-coarse:py-3 text-sm capitalize transition-colors ${tab === t ? 'bg-white/[0.08] font-medium text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+              className={`flex-1 rounded-inner px-3 py-1.5 pointer-coarse:py-3 text-sm capitalize transition-colors ${tab === t ? 'bg-subtle font-medium text-ink-primary' : 'text-ink-muted hover:text-ink-primary'}`}
             >
               {t}
             </button>
@@ -442,23 +442,23 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
           ) : tab === 'transcript' ? (
             <>
               <div className="mb-3 flex items-center justify-end gap-2 text-xs">
-                <span className="flex items-center gap-1.5 text-zinc-500">
+                <span className="flex items-center gap-1.5 text-ink-muted">
                   <DownloadIcon className="h-3.5 w-3.5" />
                   Download
                 </span>
-                <div role="group" aria-label="Download transcript" className="flex rounded-full bg-white/[0.06] p-0.5">
-                  <button onClick={() => downloadVtt(base!, detail.video.title).catch(() => alert('Could not download the subtitles. Try again.'))} title="Subtitles file for video players" className="rounded-full px-3 py-1 pointer-coarse:py-3 font-medium text-zinc-300 transition-colors hover:bg-white/10 hover:text-white">
-                    Subtitles <span className="text-zinc-500">.vtt</span>
+                <div role="group" aria-label="Download transcript" className="flex rounded-outer bg-subtle p-0.5">
+                  <button onClick={() => downloadVtt(base!, detail.video.title).catch(() => alert('Could not download the subtitles. Try again.'))} title="Subtitles file for video players" className="rounded-inner px-3 py-1 pointer-coarse:py-3 font-medium text-ink-primary transition-colors hover:bg-subtle hover:text-ink-primary">
+                    Subtitles <span className="text-ink-muted">.vtt</span>
                   </button>
-                  <button onClick={() => downloadTxt(results.transcript, detail.video.title)} title="Plain text transcript" className="rounded-full px-3 py-1 pointer-coarse:py-3 font-medium text-zinc-300 transition-colors hover:bg-white/10 hover:text-white">
-                    Text <span className="text-zinc-500">.txt</span>
+                  <button onClick={() => downloadTxt(results.transcript, detail.video.title)} title="Plain text transcript" className="rounded-inner px-3 py-1 pointer-coarse:py-3 font-medium text-ink-primary transition-colors hover:bg-subtle hover:text-ink-primary">
+                    Text <span className="text-ink-muted">.txt</span>
                   </button>
                 </div>
               </div>
               {asked.length >= 2 ? (
                 <AskCard q={asked} videoId={detail.video.id} onSeek={seek} />
               ) : (
-                searching && <p className="mb-3 text-xs text-zinc-500">Press Enter to get an AI answer from this video.</p>
+                searching && <p className="mb-3 text-xs text-ink-muted">Press Enter to get an AI answer from this video.</p>
               )}
               <Transcript segments={results.transcript} screen={results.screen} time={time} onSeek={seek} filter={filter} />
             </>
@@ -467,25 +467,25 @@ function Watch({ detail, results, startAt, filter, asked, onRename }: { detail: 
           ) : (
             <div className="space-y-4">
               {results.summary.title && results.summary.title !== detail.video.title && (
-                <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-2 text-sm ring-1 ring-white/10">
-                  <span className="min-w-0 flex-1 truncate text-zinc-300">
-                    <span className="mr-2 text-xs text-zinc-500">Suggested title</span>
+                <div className="flex items-center gap-2 rounded-outer bg-subtle px-3 py-2 text-sm ring-1 ring-border-subtle">
+                  <span className="min-w-0 flex-1 truncate text-ink-primary">
+                    <span className="mr-2 text-xs text-ink-muted">Suggested title</span>
                     {results.summary.title}
                   </span>
-                  <button onClick={() => onRename(results.summary.title!)} className="shrink-0 rounded-lg px-2 py-1 text-xs text-amber-300 ring-1 ring-white/10 hover:bg-white/5">
+                  <button onClick={() => onRename(results.summary.title!)} className="shrink-0 rounded-inner px-2 py-1 text-xs text-accent ring-1 ring-border-subtle hover:bg-subtle">
                     Use it
                   </button>
                 </div>
               )}
-              <p className="text-sm leading-relaxed text-zinc-300">{results.summary.summary || 'No speech found in this video.'}</p>
+              <p className="text-sm leading-relaxed text-ink-primary">{results.summary.summary || 'No speech found in this video.'}</p>
               {results.summary.takeaways && results.summary.takeaways.length > 0 && (
                 <div>
-                  <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">Key points</h3>
+                  <h3 className="mb-1 font-mono text-xs font-medium uppercase tracking-[0.08em] text-ink-muted">Key points</h3>
                   <ul className="space-y-1">
                     {results.summary.takeaways.filter((k) => typeof k.at === 'string' && Number.isFinite(toSeconds(k.at))).map((k) => (
                       <li key={k.at + k.text}>
-                        <button onClick={() => seek(toSeconds(k.at))} className="flex w-full gap-3 rounded-lg px-2 py-1.5 pointer-coarse:py-3 text-left text-sm text-zinc-300 hover:bg-white/5">
-                          <span className="w-10 shrink-0 pt-0.5 tabular-nums text-xs text-amber-300">{clock(toSeconds(k.at))}</span>
+                        <button onClick={() => seek(toSeconds(k.at))} className="flex w-full gap-3 rounded-inner px-2 py-1.5 pointer-coarse:py-3 text-left text-sm text-ink-primary hover:bg-subtle">
+                          <span className="w-10 shrink-0 pt-0.5 tabular-nums text-xs text-accent">{clock(toSeconds(k.at))}</span>
                           <span>{k.text}</span>
                         </button>
                       </li>
@@ -523,7 +523,7 @@ function CountUp({ value }: { value: number }) {
     from.current = value
     return () => controls.stop()
   }, [value, reduce])
-  return <span ref={ref} className="ml-1.5 tabular-nums text-zinc-200">{value}%</span>
+  return <span ref={ref} className="ml-1.5 tabular-nums text-ink-primary">{value}%</span>
 }
 
 export default function VideoDetail() {
@@ -578,7 +578,7 @@ export default function VideoDetail() {
   if (!detail) {
     return (
       <Shell>
-        <div className="shimmer aspect-video rounded-3xl" />
+        <div className="shimmer aspect-video rounded-outer" />
       </Shell>
     )
   }
@@ -623,13 +623,13 @@ export default function VideoDetail() {
                     setEditing(false)
                   }
                 }}
-                className="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 font-display text-2xl font-semibold text-white outline-none focus:border-amber-400/60 md:text-3xl"
+                className="min-w-0 flex-1 rounded-outer border border-border-subtle bg-subtle px-3 py-1.5 font-display text-2xl font-semibold text-ink-primary outline-none focus:border-accent/60 md:text-3xl"
               />
             ) : (
               <>
-                <h1 className="font-display title-xl text-white">{video.title}</h1>
+                <h1 className="font-display title-xl text-ink-primary">{video.title}</h1>
                 {video.status === 'ready' && (
-                  <button onClick={() => setEditing(true)} aria-label="Rename video" title="Rename video" className="grid h-8 w-8 pointer-coarse:size-11 place-items-center rounded-full text-zinc-500 transition-colors hover:bg-white/5 hover:text-white">
+                  <button onClick={() => setEditing(true)} aria-label="Rename video" title="Rename video" className="grid h-8 w-8 pointer-coarse:size-11 place-items-center rounded-outer text-ink-muted transition-colors hover:bg-subtle hover:text-ink-primary">
                     <PencilIcon className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -648,20 +648,20 @@ export default function VideoDetail() {
                 disabled={deleting}
                 aria-label="Delete video"
                 title="Delete video"
-                className={`grid h-9 w-9 pointer-coarse:size-11 place-items-center rounded-full text-zinc-300 ring-1 ring-white/10 transition-colors hover:bg-red-500/15 hover:text-red-200 hover:ring-red-400/40 disabled:opacity-50`}
+                className={`grid h-9 w-9 pointer-coarse:size-11 place-items-center rounded-outer text-ink-primary ring-1 ring-border-subtle transition-colors hover:bg-danger/15 hover:text-danger hover:ring-danger/40 disabled:opacity-50`}
               >
                 <TrashIcon />
               </button>
             )}
             </div>
           </div>
-          <p className="text-xs text-zinc-500">{new Date(video.created_at).toLocaleString()}</p>
+          <p className="font-mono text-xs tabular-nums text-ink-muted">{new Date(video.created_at).toLocaleString()}</p>
         </header>
 
         {!detail.url ? (
-          <div className="glass rounded-3xl p-6 text-sm text-zinc-400">Upload still in progress...</div>
+          <div className="glass rounded-outer p-6 text-sm text-ink-muted">Upload still in progress...</div>
         ) : video.status === 'failed' ? (
-          <div className="glass rounded-3xl border-red-400/30 p-6 text-sm text-red-300">Processing failed.</div>
+          <div className="glass rounded-outer border-danger/30 p-6 text-sm text-danger">Processing failed.</div>
         ) : (
           <Watch detail={detail} results={results} startAt={startAt} filter={params.get('q') ?? ''} asked={params.get('ask') === '1' ? (params.get('q') ?? '').trim() : ''} onRename={onRename} />
         )}

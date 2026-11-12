@@ -199,21 +199,21 @@ export default function SharePage() {
 
   if (gone) {
     return (
-      <div className="relative grid min-h-screen place-items-center bg-page px-4 text-center text-zinc-200">
+      <div className="relative grid min-h-screen place-items-center bg-canvas px-4 text-center text-ink-primary">
         <div className="relative">
-          <h1 className="font-display text-2xl font-semibold text-white">Link not available</h1>
-          <p className="mt-2 text-sm text-zinc-400">This link has expired, been cancelled, or the video was removed.</p>
+          <h1 className="font-display text-2xl font-semibold text-ink-primary">Link not available</h1>
+          <p className="mt-2 text-sm text-ink-muted">This link has expired, been cancelled, or the video was removed.</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-clip bg-page text-zinc-200">
+    <div className="relative min-h-screen overflow-x-clip bg-canvas text-ink-primary">
       <main className="relative z-10 mx-auto max-w-6xl space-y-5 px-4 py-8">
         <header>
-          <p className="text-xs uppercase tracking-[0.15em] text-zinc-500">Shared video</p>
-          <h1 className="font-display title-xl mt-1 text-white">{view?.title ?? ' '}</h1>
+          <p className="font-mono text-xs uppercase tracking-[0.08em] text-ink-muted">Shared video</p>
+          <h1 className="font-display title-xl mt-1 text-ink-primary">{view?.title ?? ' '}</h1>
         </header>
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0 space-y-4">
@@ -236,27 +236,27 @@ export default function SharePage() {
                   }
                 }}
                 onLoadedMetadata={(e) => !active && setDuration(e.currentTarget.duration)}
-                className="w-full aspect-video rounded-2xl bg-black object-contain ring-1 ring-white/10"
+                className="w-full aspect-video rounded-outer bg-canvas object-contain ring-1 ring-border-subtle"
               >
                 <track kind="captions" srcLang="en" label="English" src={base + 'transcript.vtt'} />
               </video>
               {active && clipView && <ClipControls playing={playing} position={rel} length={clipView.length} onToggle={clipToggle} onSeek={clipSeek} fullscreenTarget={box} />}
               </div>
             ) : (
-              <div className="shimmer aspect-video rounded-2xl" />
+              <div className="shimmer aspect-video rounded-outer" />
             )}
             {base && summary && summary.chapters.length > 0 && <ChapterStrip base={base} chapters={summary.chapters} time={time} duration={duration} onSeek={seek} />}
           </div>
 
-          <aside className="glass flex max-h-[75vh] min-h-[24rem] flex-col overflow-hidden rounded-2xl lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]">
-            <div role="tablist" aria-label="Video details" className="flex shrink-0 gap-1 border-b border-white/5 p-1.5">
+          <aside className="glass flex max-h-[75vh] min-h-[24rem] flex-col overflow-hidden rounded-outer lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]">
+            <div role="tablist" aria-label="Video details" className="flex shrink-0 gap-1 border-b border-border-subtle p-1.5">
               {(['transcript', 'clips', 'summary'] as const).map((t) => (
                 <button
                   key={t}
                   role="tab"
                   aria-selected={tab === t}
                   onClick={() => setTab(t)}
-                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm capitalize transition-colors ${tab === t ? 'bg-white/[0.08] font-medium text-white' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  className={`flex-1 rounded-inner px-3 py-1.5 text-sm capitalize transition-colors ${tab === t ? 'bg-subtle font-medium text-ink-primary' : 'text-ink-muted hover:text-ink-primary'}`}
                 >
                   {t}
                 </button>
@@ -273,21 +273,21 @@ export default function SharePage() {
                         <button
                           onClick={() => playClip(c)}
                           aria-pressed={active?.id === c.id}
-                          className={`flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-sm ring-1 transition-colors ${active?.id === c.id ? 'bg-amber-400/15 ring-amber-400/40' : 'ring-transparent hover:bg-white/5'}`}
+                          className={`flex w-full items-center gap-3 rounded-inner px-2 py-1.5 text-left text-sm ring-1 transition-colors ${active?.id === c.id ? 'bg-accent/15 ring-accent/40' : 'ring-transparent hover:bg-subtle'}`}
                         >
-                          <span className="shrink-0 tabular-nums text-xs text-amber-300">
+                          <span className="shrink-0 tabular-nums text-xs text-accent">
                             {clock(c.start_ms / 1000)}-{clock(c.end_ms / 1000)}
                           </span>
-                          <span className="truncate text-zinc-200">{c.title}</span>
+                          <span className="truncate text-ink-primary">{c.title}</span>
                         </button>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-zinc-500">No clips.</p>
+                  <p className="text-sm text-ink-muted">No clips.</p>
                 )
               ) : (
-                <p className="text-sm leading-relaxed text-zinc-300">{summary?.summary || 'No summary.'}</p>
+                <p className="text-sm leading-relaxed text-ink-primary">{summary?.summary || 'No summary.'}</p>
               )}
             </div>
           </aside>
