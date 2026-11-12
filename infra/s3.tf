@@ -24,10 +24,11 @@ import {
 }
 
 resource "aws_s3_bucket" "videos" {
-  bucket = local.bucket
+  bucket        = local.bucket
+  force_destroy = true
 
   lifecycle {
-    prevent_destroy = true
+    prevent_destroy = false
   }
 }
 

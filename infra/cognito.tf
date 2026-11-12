@@ -3,7 +3,7 @@ resource "aws_cognito_user_pool" "main" {
   username_attributes      = ["email"]
   auto_verified_attributes = ["email"]
   user_pool_tier           = "ESSENTIALS"
-  deletion_protection      = "ACTIVE"
+  deletion_protection      = "INACTIVE"
 
   password_policy {
     minimum_length = 8
