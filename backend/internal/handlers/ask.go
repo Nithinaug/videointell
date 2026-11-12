@@ -21,11 +21,11 @@ import (
 type AskHandler struct {
 	Videos  *VideoHandler
 	AI      awsapi.Converser
-	limiter *rateLimiter
+	PerHour int
 }
 
 func NewAskHandler(videos *VideoHandler, ai awsapi.Converser, perHour int) *AskHandler {
-	return &AskHandler{Videos: videos, AI: ai, limiter: newRateLimiter(perHour, time.Hour)}
+	return &AskHandler{Videos: videos, AI: ai, PerHour: perHour}
 }
 
 const (
@@ -175,9 +175,17 @@ func (h *AskHandler) Ask(c *gin.Context) {
 		return
 	}
 	userID := c.GetString("user_id")
-	if h.limiter != nil && !h.limiter.allow(userID, time.Now()) {
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("you can ask %d questions an hour; try again later", h.limiter.limit)})
-		return
+	if h.PerHour > 0 {
+		ok, err := h.Videos.Store.ReserveAsk(userID, h.PerHour)
+		if err != nil {
+			log.Printf("ask limit %s: %v", userID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not check your question limit"})
+			return
+		}
+		if !ok {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": fmt.Sprintf("you can ask %d questions an hour; try again later", h.PerHour)})
+			return
+		}
 	}
 	var candidates []models.Video
 	if body.VideoID != "" {

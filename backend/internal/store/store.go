@@ -193,3 +193,13 @@ func (s *Store) ReleaseExport(id string) error {
 	_, err := s.db.Exec(`DELETE FROM exports WHERE id = $1`, id)
 	return err
 }
+
+func (s *Store) ReserveAsk(userID string, perHour int) (bool, error) {
+	res, err := s.db.Exec(`INSERT INTO asks (user_id)
+		SELECT $1 WHERE (SELECT count(*) FROM asks WHERE user_id = $1 AND created_at > now() - interval '1 hour') < $2`, userID, perHour)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}

@@ -41,34 +41,6 @@ func (u *userCache) put(sub, id string, now time.Time) {
 	u.items[sub] = cachedUser{id, now}
 }
 
-type rateLimiter struct {
-	mu    sync.Mutex
-	limit int
-	every time.Duration
-	hits  map[string][]time.Time
-}
-
-func newRateLimiter(limit int, every time.Duration) *rateLimiter {
-	return &rateLimiter{limit: limit, every: every, hits: map[string][]time.Time{}}
-}
-
-func (r *rateLimiter) allow(key string, now time.Time) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	kept := r.hits[key][:0]
-	for _, t := range r.hits[key] {
-		if now.Sub(t) < r.every {
-			kept = append(kept, t)
-		}
-	}
-	if len(kept) >= r.limit {
-		r.hits[key] = kept
-		return false
-	}
-	r.hits[key] = append(kept, now)
-	return true
-}
-
 func AuthMiddleware(v *cognito.Verifier, st *store.Store, maxUsers int) gin.HandlerFunc {
 	cache := &userCache{items: map[string]cachedUser{}}
 	return func(c *gin.Context) {

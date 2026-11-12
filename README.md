@@ -348,10 +348,11 @@ per GB.
   `max_video_minutes`); the hard ceiling is about 4.5 GiB, because the split
   Lambda keeps the upload and its chunks in its 10 GB `/tmp`.
 - **Abuse limits:** 3 uploads per user and 30 across the site per day, 30 AI
-  answers per user per hour and 100 accounts in all, by default. A question
-  about one video sends its whole transcript only up to 40,000 characters;
-  longer videos send the matching lines instead. The Ask counter lives in
-  the API's memory, so it resets on restart and is per instance.
+  answers per user per hour, 5 HD exports per user and 20 across the site
+  per day, and 100 accounts in all, by default. All of these are counted in
+  Postgres, so restarts and extra API instances do not reset them. A
+  question about one video sends its whole transcript only up to 40,000
+  characters; longer videos send the matching lines instead.
 - **Sign-in:** tokens must carry `email_verified = true`. The API refuses to
   start on AWS (`REQUIRE_MOUNT=true`) with the default or a short
   `JWT_SECRET`; `run-hybrid.sh` makes a random one for each run.
@@ -378,21 +379,11 @@ per GB.
   Amazon Nova Lite (`apac.amazon.nova-lite-v1:0`).
 - **Retention:** the `expire-test-uploads` rule deletes `uploads/` after
   3 days. That is a test setting. Playback after `ready` comes from
-  `processed/`, so expiry only blocks re-processing an old video.
-- **Cost:** EC2, the NAT Gateway, the ALB and Aurora bill by the hour even
-  when idle. Tear the stack down after demos.
+  `processed/`, so expiry only blocks re-processing an old video and making
+  a new HD export of it (the button hides once the original is gone).
+- **Cost:** the ALB, the API instance and Aurora bill by the hour even when
+  idle (there is no NAT Gateway). Tear the app stack down after demos.
 - **Region:** `ap-south-1`. Nova Lite works there (checked).
-
-### Later
-
-- Go public: switch on WAF (`waf_enabled`), move the Ask rate limit from the
-  API's memory to Postgres, HTTPS from CloudFront to the ALB once there is a
-  domain, and a monthly cost check against the remaining credits.
-- Sharing a highlight reel (a share link that spans several videos)
-- Postgres full-text search over transcripts and screen text, when
-  libraries outgrow file scanning.
-- A stronger speech model for Indian accents and mixed Hindi and English.
-- An Aurora reader in AZ B, customer-managed KMS keys, Container Insights.
 
 ### AWS services in scope
 
@@ -537,7 +528,7 @@ backend/run-hybrid.sh
 
 The API runs its SQL migrations on every start (`internal/db/migrations`,
 all idempotent): `0004` adds `clips`, `0005` adds `share_links`, `0006`
-adds `exports`.
+adds `exports`, `0007` adds `asks`.
 
 ## Deploying to AWS
 
