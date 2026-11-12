@@ -1,0 +1,92 @@
+name: video-process
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: videointell
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-videointell}
+      POSTGRES_DB: videointell
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U videointell -d videointell"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  init-data:
+    image: busybox:1.37
+    command: ["sh", "-c", "chown -R 65532:65532 /mnt/videos"]
+    volumes:
+      - videos:/mnt/videos
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+      init-data:
+        condition: service_completed_successfully
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://videointell:${POSTGRES_PASSWORD:-videointell}@db:5432/videointell?sslmode=disable
+      LOCAL_DATA_DIR: /mnt/videos
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:?set COGNITO_USER_POOL_ID in .env}
+      COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:?set COGNITO_CLIENT_ID in .env}
+      AWS_REGION: ${AWS_REGION:-ap-south-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      WORKER_FUNCTION: ${WORKER_FUNCTION:-}
+      VIDEO_BUCKET: ${VIDEO_BUCKET:-}
+      BEDROCK_MODEL_ID: ${BEDROCK_MODEL_ID:-apac.amazon.nova-lite-v1:0}
+      LOCAL_WORKER: "true"
+    volumes:
+      - videos:/mnt/videos
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    entrypoint: ["/usr/local/bin/localworker"]
+    user: "65532:65532"
+    depends_on:
+      db:
+        condition: service_healthy
+      init-data:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://videointell:${POSTGRES_PASSWORD:-videointell}@db:5432/videointell?sslmode=disable
+      LOCAL_DATA_DIR: /mnt/videos
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      MAX_VIDEO_MINUTES: ${MAX_VIDEO_MINUTES:-30}
+    volumes:
+      - videos:/mnt/videos
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+        VITE_COGNITO_DOMAIN: ${VITE_COGNITO_DOMAIN:?set VITE_COGNITO_DOMAIN in .env}
+        VITE_COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:?set COGNITO_CLIENT_ID in .env}
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  videos:

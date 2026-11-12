@@ -27,6 +27,7 @@ type Config struct {
 	VideoBucket      string
 	ExportsPerDay    int
 	ExportsTotal     int
+	LocalWorker      bool
 }
 
 func Load() Config {
@@ -52,6 +53,7 @@ func Load() Config {
 		VideoBucket:      os.Getenv("VIDEO_BUCKET"),
 		ExportsPerDay:    getInt("EXPORTS_PER_DAY", 5),
 		ExportsTotal:     getInt("EXPORTS_PER_DAY_TOTAL", 20),
+		LocalWorker:      getEnv("LOCAL_WORKER", "") == "true",
 	}
 }
 

@@ -3,7 +3,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/localworker ./cmd/localworker
 
 FROM debian:bookworm-slim AS whisper
 ARG WHISPER_VERSION=v1.9.5
@@ -25,5 +26,6 @@ RUN apt-get update \
 COPY --from=whisper /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper /model.bin /models/whisper.bin
 COPY --from=build /out/worker /usr/local/bin/worker
+COPY --from=build /out/localworker /usr/local/bin/localworker
 ENV WHISPER_MODEL=/models/whisper.bin TESSERACT_BIN=/usr/bin/tesseract OMP_THREAD_LIMIT=1
 ENTRYPOINT ["/usr/local/bin/worker"]

@@ -29,10 +29,11 @@ type ExportHandler struct {
 	Bucket   string
 	PerDay   int
 	Total    int
+	Local    bool
 }
 
-func NewExportHandler(clips *ClipHandler, lambda Invoker, function, bucket string, perDay, total int) *ExportHandler {
-	return &ExportHandler{Clips: clips, Lambda: lambda, Function: function, Bucket: bucket, PerDay: perDay, Total: total}
+func NewExportHandler(clips *ClipHandler, lambda Invoker, function, bucket string, perDay, total int, local bool) *ExportHandler {
+	return &ExportHandler{Clips: clips, Lambda: lambda, Function: function, Bucket: bucket, PerDay: perDay, Total: total, Local: local}
 }
 
 func exportState(ready, failed bool, started, now time.Time) string {
@@ -111,7 +112,7 @@ func (h *ExportHandler) Start(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if h.Function == "" || h.Bucket == "" {
+	if !h.Local && (h.Function == "" || h.Bucket == "") {
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "HD export needs the Lambda worker, which is not set up here"})
 		return
 	}
@@ -164,6 +165,10 @@ func (h *ExportHandler) Start(c *gin.Context) {
 			log.Printf("export slot %s: %v", v.ID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not start the export"})
 		}
+		return
+	}
+	if h.Local {
+		c.JSON(http.StatusAccepted, gin.H{"state": "working"})
 		return
 	}
 	payload := worker.Event{Op: "export", Bucket: h.Bucket, VideoKey: v.OriginalKey}
