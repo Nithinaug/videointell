@@ -228,7 +228,7 @@ func TestPipelinePortraitRotation(t *testing.T) {
 	plain := filepath.Join(scratch, "plain.mp4")
 	for _, args := range [][]string{
 		{"-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=24:duration=15", "-c:v", "libx264", "-preset", "ultrafast", "-g", "24", plain},
-		{"-i", plain, "-c", "copy", "-metadata:s:v:0", "rotate=90", src},
+		{"-display_rotation", "-90", "-i", plain, "-c", "copy", src},
 	} {
 		if out, err := exec.Command("ffmpeg", append([]string{"-hide_banner", "-loglevel", "error", "-y"}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("make test video: %v\n%s", err, out)
